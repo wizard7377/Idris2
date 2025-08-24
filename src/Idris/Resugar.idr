@@ -29,7 +29,7 @@ import Libraries.Data.ANameMap
 -- readability).
 
 unbracketApp : PTerm' nm -> PTerm' nm
-unbracketApp (PBracketed _ tm@(PApp _ _ _)) = tm
+unbracketApp (PBracketed _ tm@(PApp {})) = tm
 unbracketApp tm = tm
 
 -- TODO: Deal with precedences
@@ -88,19 +88,19 @@ addBracket : FC -> PTerm' nm -> PTerm' nm
 addBracket fc tm = if needed tm then PBracketed fc tm else tm
   where
     needed : PTerm' nm -> Bool
-    needed (PBracketed _ _) = False
-    needed (PRef _ _) = False
-    needed (PPair _ _ _) = False
-    needed (PDPair _ _ _ _ _) = False
-    needed (PUnit _) = False
-    needed (PComprehension _ _ _) = False
-    needed (PList _ _ _) = False
-    needed (PSnocList _ _ _) = False
-    needed (PRange{}) = False
-    needed (PRangeStream{}) = False
-    needed (PPrimVal _ _) = False
-    needed (PIdiom{}) = False
-    needed (PBang{}) = False
+    needed (PBracketed {}) = False
+    needed (PRef {}) = False
+    needed (PPair {}) = False
+    needed (PDPair {}) = False
+    needed (PUnit {}) = False
+    needed (PComprehension {}) = False
+    needed (PList {}) = False
+    needed (PSnocList {}) = False
+    needed (PRange {}) = False
+    needed (PRangeStream {}) = False
+    needed (PPrimVal {}) = False
+    needed (PIdiom {}) = False
+    needed (PBang {}) = False
     needed tm = True
 
 bracket : {auto c : Ref Ctxt Defs} ->
@@ -287,11 +287,11 @@ mutual
                       else toPTerm p ret
     where
       needsBind : Maybe Name -> Bool
-      needsBind (Just nm@(UN (Basic t)))
+      needsBind (Just nm@(UN (Basic _)))
           = let ret = map rawName ret
                 ns = findBindableNames False [] [] ret
                 allNs = findAllNames [] ret in
-                (nm `elem` allNs) && not (t `elem` (map Builtin.fst ns))
+                (nm `elem` allNs) && not (nm `elem` (map Builtin.fst ns))
       needsBind _ = False
   toPTerm p (IPi fc rig pt n arg ret)
       = do arg' <- toPTerm appPrec arg
@@ -375,9 +375,8 @@ mutual
   toPTerm p (IPrimVal fc c) = pure (PPrimVal fc c)
   toPTerm p (IHole fc str) = pure (PHole fc False str)
   toPTerm p (IType fc) = pure (PType fc)
-  toPTerm p (IBindVar fc v)
-    = let nm = UN (Basic v) in
-      pure (PRef fc (MkKindedName (Just Bound) nm nm))
+  toPTerm p (IBindVar fc nm)
+    = pure (PRef fc (MkKindedName (Just Bound) nm nm))
   toPTerm p (IBindHere fc _ tm) = toPTerm p tm
   toPTerm p (IAs fc nameFC _ n pat) = pure (PAs fc nameFC n !(toPTerm argPrec pat))
   toPTerm p (IMustUnify fc r pat) = pure (PDotted fc !(toPTerm argPrec pat))
@@ -474,8 +473,8 @@ mutual
   toPTypeDecl : {auto c : Ref Ctxt Defs} ->
                 {auto s : Ref Syn SyntaxInfo} ->
                 ImpTy' KindedName -> Core (PTypeDecl' KindedName)
-  toPTypeDecl (MkImpTy fc n ty)
-      = pure (MkFCVal fc $ MkPTy (pure ("", n)) "" !(toPTerm startPrec ty))
+  toPTypeDecl impTy
+      = pure (MkFCVal impTy.fc $ MkPTy (pure ("", impTy.tyName)) "" !(toPTerm startPrec impTy.val))
 
   toPData : {auto c : Ref Ctxt Defs} ->
             {auto s : Ref Syn SyntaxInfo} ->
@@ -489,32 +488,9 @@ mutual
   toPField : {auto c : Ref Ctxt Defs} ->
              {auto s : Ref Syn SyntaxInfo} ->
              IField' KindedName -> Core (PField' KindedName)
-  toPField (MkIField fc c p n ty)
-      = do ty' <- toPTerm startPrec ty
-           p' <- traverse (toPTerm startPrec) p
-           pure (MkFCVal fc $ MkRecordField "" c p' [n] ty')
-
-  toPRecord : {auto c : Ref Ctxt Defs} ->
-              {auto s : Ref Syn SyntaxInfo} ->
-              ImpRecord' KindedName ->
-              Core ( Name
-                   , List (Name, RigCount, PiInfo IPTerm, IPTerm)
-                   , List DataOpt
-                   , Maybe (String, Name)
-                   , List (PField' KindedName))
-  toPRecord (MkImpRecord fc n ps opts con fs)
-      = do ps' <- traverse (\ (n, c, p, ty) =>
-                                   do ty' <- toPTerm startPrec ty
-                                      p' <- mapPiInfo p
-                                      pure (n, c, p', ty')) ps
-           fs' <- traverse toPField fs
-           pure (n, ps', opts, Just ("", con), fs')
-    where
-      mapPiInfo : PiInfo IRawImp -> Core (PiInfo IPTerm)
-      mapPiInfo Explicit        = pure   Explicit
-      mapPiInfo Implicit        = pure   Implicit
-      mapPiInfo AutoImplicit    = pure   AutoImplicit
-      mapPiInfo (DefImplicit p) = pure $ DefImplicit !(toPTerm startPrec p)
+  toPField field
+      = do bind' <- traverse (toPTerm startPrec) field.val
+           pure (Mk [field.fc , "", field.rig, [field.name]] bind')
 
   toPFnOpt : {auto c : Ref Ctxt Defs} ->
              {auto s : Ref Syn SyntaxInfo} ->
@@ -537,20 +513,20 @@ mutual
   toPDecl (IParameters fc ps ds)
       = do ds' <- traverse toPDecl ds
            args <-
-             traverseList1 (\(n, rig, info, tpe) =>
-                 do info' <- traverse (toPTerm startPrec) info
-                    type' <- toPTerm startPrec tpe
-                    pure (MkFullBinder info' rig (NoFC n) type')) ps
+             traverseList1 (\binder =>
+                 do info' <- traverse (toPTerm startPrec) binder.val.info
+                    type' <- toPTerm startPrec binder.val.boundType
+                    pure (MkFullBinder info' binder.rig binder.name type')) ps
            pure (Just (MkFCVal fc (PParameters (Right args) (catMaybes ds'))))
-  toPDecl (IRecord fc _ vis mbtot r)
-      = do (n, ps, opts, con, fs) <- toPRecord r
-           pure (Just (MkFCVal fc $ PRecord "" vis mbtot (MkPRecord n (map toBinder ps) opts con fs)))
+  toPDecl (IRecord fc _ vis mbtot (MkWithData _ $ MkImpRecord header body))
+      = do ps' <- traverse (traverse (traverse (toPTerm startPrec))) header.val
+           fs' <- traverse toPField body.val
+           pure (Just (MkFCVal fc $ PRecord "" vis mbtot
+                          (MkPRecord header.name.val (map toBinder ps') body.opts (Just (AddDef body.name)) fs')))
            where
-             toBinder : (Name, ZeroOneOmega, PiInfo (PTerm' KindedName), PTerm' KindedName) -> PBinder' KindedName
-             toBinder (n, rig, info, ty)
-               = MkFullBinder info rig (NoFC n) ty
-                              --        ^^^^
-                              -- we should know this location
+             toBinder : ImpParameter' (PTerm' KindedName) -> PBinder' KindedName
+             toBinder binder
+               = MkFullBinder binder.val.info binder.rig binder.name binder.val.boundType
 
   toPDecl (IFail fc msg ds)
       = do ds' <- traverse toPDecl ds
@@ -564,7 +540,7 @@ mutual
                                   !(toPTerm startPrec rhs)))
   toPDecl (IRunElabDecl fc tm)
       = pure (Just (MkFCVal fc $ PRunElabDecl !(toPTerm startPrec tm)))
-  toPDecl (IPragma _ _ _) = pure Nothing
+  toPDecl (IPragma {}) = pure Nothing
   toPDecl (ILog _) = pure Nothing
   toPDecl (IBuiltin fc type name) = pure $ Just $ MkFCVal fc $ PBuiltin type name
 

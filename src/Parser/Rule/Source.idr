@@ -205,6 +205,10 @@ simpleStr : Rule String
 simpleStr = strBegin *> commit *> (option "" simpleStrLit) <* strEnd
 
 export
+simpleMultiStr : Rule String
+simpleMultiStr = multilineBegin *> commit *> (option "" simpleStrLit) <* strEnd
+
+export
 aDotIdent : Rule String
 aDotIdent = terminal "Expected dot+identifier" $
                      \case
@@ -346,6 +350,10 @@ moduleIdent = nsAsModuleIdent <$> namespaceId
 export
 unqualifiedName : Rule String
 unqualifiedName = identPart
+
+export
+userName : Rule Name
+userName = UN . Basic <$> unqualifiedName
 
 export
 holeName : Rule String

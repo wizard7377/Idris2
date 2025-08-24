@@ -19,13 +19,13 @@ record Prim where
   totality : Totality
 
 binOp : (Constant -> Constant -> Maybe Constant) ->
-        {vars : _} -> Vect 2 (NF vars) -> Maybe (NF vars)
+        Vect 2 (NF vars) -> Maybe (NF vars)
 binOp fn [NPrimVal fc x, NPrimVal _ y]
     = map (NPrimVal fc) (fn x y)
 binOp _ _ = Nothing
 
 unaryOp : (Constant -> Maybe Constant) ->
-          {vars : _} -> Vect 1 (NF vars) -> Maybe (NF vars)
+          Vect 1 (NF vars) -> Maybe (NF vars)
 unaryOp fn [NPrimVal fc x]
     = map (NPrimVal fc) (fn x)
 unaryOp _ _ = Nothing
@@ -498,9 +498,9 @@ doubleCeiling = doubleOp ceiling
 
 -- Only reduce for concrete values
 believeMe : Vect 3 (NF vars) -> Maybe (NF vars)
-believeMe [_, _, val@(NDCon _ _ _ _ _)] = Just val
-believeMe [_, _, val@(NTCon _ _ _ _ _)] = Just val
-believeMe [_, _, val@(NPrimVal _ _)] = Just val
+believeMe [_, _, val@(NDCon {})] = Just val
+believeMe [_, _, val@(NTCon {})] = Just val
+believeMe [_, _, val@(NPrimVal {})] = Just val
 believeMe [_, _, NType fc u] = Just (NType fc u)
 believeMe [_, _, val] = Nothing
 

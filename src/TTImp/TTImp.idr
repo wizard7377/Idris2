@@ -106,7 +106,7 @@ mutual
        -- the given binder
        IBindHere : FC -> BindMode -> RawImp' nm -> RawImp' nm
        -- A name which should be implicitly bound
-       IBindVar : FC -> String -> RawImp' nm
+       IBindVar : FC -> Name -> RawImp' nm
        -- An 'as' pattern, valid on the LHS of a clause only
        IAs : FC -> (nameFC : FC) -> UseSide -> Name -> RawImp' nm -> RawImp' nm
        -- A 'dot' pattern, i.e. one which must also have the given value
@@ -201,7 +201,7 @@ mutual
 
       show (IBindHere fc b sc)
          = "(%bindhere " ++ show sc ++ ")"
-      show (IBindVar fc n) = "$" ++ n
+      show (IBindVar fc n) = "$" ++ show n
       show (IAs fc _ _ n tm) = show n ++ "@(" ++ show tm ++ ")"
       show (IMustUnify fc r tm) = ".(" ++ show tm ++ ")"
       show (IDelayed fc r tm) = "(%delayed " ++ show tm ++ ")"
@@ -311,36 +311,13 @@ mutual
   ImpTy = ImpTy' Name
 
   public export
-  record ImpTy' (nm : Type) where
-      constructor MkImpTy
-      loc : FC
-      name : WithFC Name
-      type : RawImp' nm
-
-  %name ImpTy' ty
+  ImpTy' : Type -> Type
+  ImpTy' = AddMetadata FC' . AddMetadata TyName' . RawImp'
 
   export
   covering
   Show nm => Show (ImpTy' nm) where
-    show (MkImpTy fc n ty) = "(%claim " ++ show n.val ++ " " ++ show ty ++ ")"
-
-  public export
-  data DataOpt : Type where
-       SearchBy : List1 Name -> DataOpt -- determining arguments
-       NoHints : DataOpt -- Don't generate search hints for constructors
-       UniqueSearch : DataOpt -- auto implicit search must check result is unique
-       External : DataOpt -- implemented externally
-       NoNewtype : DataOpt -- don't apply newtype optimisation
-  %name DataOpt dopt
-
-  export
-  Eq DataOpt where
-    (==) (SearchBy xs) (SearchBy ys) = xs == ys
-    (==) NoHints NoHints = True
-    (==) UniqueSearch UniqueSearch = True
-    (==) External External = True
-    (==) NoNewtype NoNewtype = True
-    (==) _ _ = False
+    show ty = "(%claim " ++ show ty.tyName.val ++ " " ++ show ty.val ++ ")"
 
   public export
   ImpData : Type
@@ -373,50 +350,67 @@ mutual
   IField = IField' Name
 
   public export
-  data IField' : Type -> Type where
-       MkIField : FC -> RigCount -> PiInfo (RawImp' nm) ->
-                  (name : Name) -> (ty : RawImp' nm) ->
-                  IField' nm
-
-  %name IField' fld
+  IField' : Type -> Type
+  IField' nm = AddFC $ ImpParameter' (RawImp' nm)
 
   public export
   ImpParameter : Type
-  ImpParameter = ImpParameter' Name
+  ImpParameter = ImpParameter' (RawImp' Name)
 
-  -- TODO: turn into a proper datatype
   public export
   ImpParameter' : Type -> Type
-  ImpParameter' nm = (Name, RigCount, PiInfo (RawImp' nm), RawImp' nm)
+  ImpParameter' nm = WithRig $ WithName $ PiBindData nm
+
+  -- old datatype for ImpParameter, used for elabreflection compatibility
+  public export
+  OldParameters' : Type -> Type
+  OldParameters' nm = (Name, RigCount, PiInfo (RawImp' nm), RawImp' nm)
 
   public export
+  toOldParams : ImpParameter' (RawImp' nm) -> OldParameters' nm
+  toOldParams bind = (bind.name.val, bind.rig, bind.val.info, bind.val.boundType)
+
+  public export
+  fromOldParams : OldParameters' nm -> ImpParameter' (RawImp' nm)
+  fromOldParams (nm, rig, info,type) = Mk [rig, NoFC nm] (MkPiBindData info type)
+
+  export
+  Show nm => Show (ImpParameter' nm) where
+    show x = "\{show x.rig}\{show x.name.val} \{show x.val.boundType}"
+
+  public export 0
   ImpRecord : Type
-  ImpRecord = ImpRecord' Name
+  ImpRecord = AddFC $ ImpRecordData Name
 
+  public export 0
+  DataHeader : Type -> Type -- the name is the type constructor's name
+  DataHeader nm = WithName $ List (ImpParameter' (RawImp' nm))
+
+  public export 0
+  RecordBody : Type -> Type -- The name is the data constructor's name
+  RecordBody nm = WithName $ WithOpts $ List (IField' nm)
+
+  ||| A record is defined by its header containing the name and parameters, and its body
+  ||| containing the constructor name, options, and a list of fields
   public export
-  data ImpRecord' : Type -> Type where
-       MkImpRecord : FC -> (n : Name) ->
-                     (params : List (ImpParameter' nm)) ->
-                     (opts : List DataOpt) ->
-                     (conName : Name) ->
-                     (fields : List (IField' nm)) ->
-                     ImpRecord' nm
-
-  %name ImpRecord' rec
+  record ImpRecordData (nm : Type) where
+    constructor MkImpRecord
+    header : DataHeader nm
+    body : RecordBody nm
 
   export
   covering
   Show nm => Show (IField' nm) where
-    show (MkIField _ c Explicit n ty) = show n ++ " : " ++ show ty
-    show (MkIField _ c _ n ty) = "{" ++ show n ++ " : " ++ show ty ++ "}"
+    show f@(MkWithData _ (MkPiBindData Explicit ty)) = show f.name.val ++ " : " ++ show ty
+    show f@(MkWithData _ ty) = "{" ++ show f.name.val ++ " : " ++ show ty.boundType ++ "}"
 
   export
   covering
-  Show nm => Show (ImpRecord' nm) where
-    show (MkImpRecord _ n params opts con fields)
-        = "record " ++ show n ++ " " ++ show params ++
-          " " ++ show con ++ "\n\t" ++
-          showSep "\n\t" (map show fields) ++ "\n"
+  Show nm => Show (ImpRecordData nm) where
+    show (MkImpRecord header body)
+        = "record " ++ show header.name.val ++ " " ++ show header.val ++
+          " " ++ show body.name.val ++ "\n\t" ++
+          showSep "\n\t" (map show body.val) ++ "\n"
 
   public export
   data WithFlag
@@ -479,13 +473,13 @@ mutual
                Maybe TotalReq -> ImpData' nm -> ImpDecl' nm
        IDef : FC -> Name -> List (ImpClause' nm) -> ImpDecl' nm
        IParameters : FC ->
-                     List1 (ImpParameter' nm) ->
+                     List1 (ImpParameter' (RawImp' nm)) ->
                      List (ImpDecl' nm) -> ImpDecl' nm
        IRecord : FC ->
                  Maybe String -> -- nested namespace
                  WithDefault Visibility Private ->
                  Maybe TotalReq ->
-                 ImpRecord' nm -> ImpDecl' nm
+                 AddFC (ImpRecordData nm) -> ImpDecl' nm
        IFail : FC -> Maybe String -> List (ImpDecl' nm) -> ImpDecl' nm
        INamespace : FC -> Namespace -> List (ImpDecl' nm) -> ImpDecl' nm
        ITransform : FC -> Name -> RawImp' nm -> RawImp' nm -> ImpDecl' nm
@@ -511,7 +505,7 @@ mutual
     show (IParameters _ ps ds)
         = "parameters " ++ show ps ++ "\n\t" ++
           showSep "\n\t" (assert_total $ map show ds)
-    show (IRecord _ _ _ _ d) = show d
+    show (IRecord _ _ _ _ d) = show d.val
     show (IFail _ msg decls)
         = "fail" ++ maybe "" ((" " ++) . show) msg ++ "\n" ++
           showSep "\n" (assert_total $ map (("  " ++) . show) decls)
@@ -522,7 +516,7 @@ mutual
         = "%transform " ++ show n ++ " " ++ show lhs ++ " ==> " ++ show rhs
     show (IRunElabDecl _ tm)
         = "%runElab " ++ show tm
-    show (IPragma _ _ _) = "[externally defined pragma]"
+    show (IPragma {}) = "[externally defined pragma]"
     show (ILog Nothing) = "%logging off"
     show (ILog (Just (topic, lvl))) = "%logging " ++ case topic of
       [] => show lvl
@@ -536,9 +530,10 @@ mkWithClause : FC -> RawImp' nm -> List1 (RigCount, RawImp' nm, Maybe (RigCount,
 mkWithClause fc lhs ((rig, wval, prf) ::: []) flags cls
   = WithClause fc lhs rig wval prf flags cls
 mkWithClause fc lhs ((rig, wval, prf) ::: wp :: wps) flags cls
-  = let vfc = virtualiseFC fc in
-    WithClause fc lhs rig wval prf flags
-      [mkWithClause fc (IApp vfc lhs (IBindVar vfc "arg")) (wp ::: wps) flags cls]
+  = let vfc = virtualiseFC fc
+        arg = UN $ Basic "arg"
+     in WithClause fc lhs rig wval prf flags
+          [mkWithClause fc (IApp vfc lhs $ IBindVar vfc arg) (wp ::: wps) flags cls]
 
 -- Extract the RawImp term from a FieldUpdate.
 export
@@ -597,7 +592,7 @@ lhsInCurrentNS nest (INamedApp loc f n a)
 lhsInCurrentNS nest (IWithApp loc f a)
     = do f' <- lhsInCurrentNS nest f
          pure (IWithApp loc f' a)
-lhsInCurrentNS nest tm@(IVar loc (NS _ _)) = pure tm -- leave explicit NS alone
+lhsInCurrentNS nest tm@(IVar loc (NS {})) = pure tm -- leave explicit NS alone
 lhsInCurrentNS nest (IVar loc n)
     = case lookup n (names nest) of
            Nothing =>
@@ -638,7 +633,7 @@ findIBinds (IQuote fc tm) = findIBinds tm
 findIBinds (IUnquote fc tm) = findIBinds tm
 findIBinds (IRunElab fc _ tm) = findIBinds tm
 findIBinds (IBindHere _ _ tm) = findIBinds tm
-findIBinds (IBindVar _ n) = [n]
+findIBinds (IBindVar _ (UN (Basic n))) = [n]
 findIBinds (IUpdate fc updates tm)
     = findIBinds tm ++ concatMap (findIBinds . getFieldUpdateTerm) updates
 -- We've skipped lambda, case, let and local - rather than guess where the
@@ -673,7 +668,7 @@ findImplicits (IForce fc tm) = findImplicits tm
 findImplicits (IQuote fc tm) = findImplicits tm
 findImplicits (IUnquote fc tm) = findImplicits tm
 findImplicits (IRunElab fc _ tm) = findImplicits tm
-findImplicits (IBindVar _ n) = [n]
+findImplicits (IBindVar _ (UN (Basic n))) = [n]
 findImplicits (IUpdate fc updates tm)
     = findImplicits tm ++ concatMap (findImplicits . getFieldUpdateTerm) updates
 findImplicits tm = []
@@ -754,7 +749,7 @@ implicitsAs n defs ns tm
         -- Parameter blocks also introduce additional telescope of implicit, auto,
         -- and explicit variables. So we first peel off all of the quantifiers
         -- corresponding to these variables.
-        findImps ns es (_ :: locals) (NBind fc x (Pi _ _ _ _) sc)
+        findImps ns es (_ :: locals) (NBind fc x (Pi {}) sc)
           = do body <- sc defs (toClosure defaultOpts Env.empty (Erased fc Placeholder))
                findImps ns es locals body
                -- ^ TODO? check that name of the pi matches name of local?
@@ -787,9 +782,9 @@ implicitsAs n defs ns tm
 
         impAs : FC -> List (Name, PiInfo RawImp) -> RawImp -> RawImp
         impAs loc' [] tm = tm
-        impAs loc' ((nm@(UN (Basic n)), AutoImplicit) :: ns) tm
+        impAs loc' ((nm@(UN (Basic _)), AutoImplicit) :: ns) tm
             = impAs loc' ns $
-                 INamedApp loc' tm nm (IBindVar loc' n)
+                 INamedApp loc' tm nm (IBindVar loc' nm)
 
         impAs loc' ((n, Implicit) :: ns) tm
             = impAs loc' ns $
@@ -813,17 +808,17 @@ definedInBlock ns decls =
     Prelude.toList $ foldl (defName ns) empty decls
   where
     getName : ImpTy -> Name
-    getName (MkImpTy _ n _) = n.val
+    getName = (.tyName.val)
 
     getFieldName : IField -> Name
-    getFieldName (MkIField _ _ _ n _) = n
+    getFieldName f = f.name.val
 
     expandNS : Namespace -> Name -> Name
     expandNS ns n
        = if ns == emptyNS then n else case n of
-           UN _ => NS ns n
-           MN _ _ => NS ns n
-           DN _ _ => NS ns n
+           UN {} => NS ns n
+           MN {} => NS ns n
+           DN {} => NS ns n
            _ => n
 
     defName : Namespace -> SortedSet Name -> ImpDecl -> SortedSet Name
@@ -835,8 +830,8 @@ definedInBlock ns decls =
     defName ns acc (IParameters _ _ pds) = foldl (defName ns) acc pds
     defName ns acc (IFail _ _ nds) = foldl (defName ns) acc nds
     defName ns acc (INamespace _ n nds) = foldl (defName (ns <.> n)) acc nds
-    defName ns acc (IRecord _ fldns _ _ (MkImpRecord _ n _ opts con flds))
-        = foldl (flip insert) acc $ expandNS ns con :: all
+    defName ns acc (IRecord _ fldns _ _ rec)
+        = foldl (flip insert) acc $ expandNS ns rec.val.body.name.val :: all
       where
         fldns' : Namespace
         fldns' = maybe ns (\ f => ns <.> mkNamespace f) fldns
@@ -846,7 +841,7 @@ definedInBlock ns decls =
         toRF n = n
 
         fnsUN : List Name
-        fnsUN = map getFieldName flds
+        fnsUN = map getFieldName rec.val.body.val
 
         fnsRF : List Name
         fnsRF = map toRF fnsUN
@@ -859,7 +854,7 @@ definedInBlock ns decls =
         -- inside the parameter block)
         -- so let's just declare all of them and some may go unused.
         all : List Name
-        all = expandNS ns n :: map (expandNS fldns') (fnsRF ++ fnsUN)
+        all = expandNS ns rec.val.header.name.val :: map (expandNS fldns') (fnsRF ++ fnsUN)
 
     defName ns acc (IPragma _ pns _) = foldl (flip insert) acc $ map (expandNS ns) pns
     defName _ acc _ = acc
@@ -870,7 +865,7 @@ isIVar (IVar fc v) = Just (fc, v)
 isIVar _ = Nothing
 
 export
-isIBindVar : RawImp' nm -> Maybe (FC, String)
+isIBindVar : RawImp' nm -> Maybe (FC, Name)
 isIBindVar (IBindVar fc v) = Just (fc, v)
 isIBindVar _ = Nothing
 

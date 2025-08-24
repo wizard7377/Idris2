@@ -291,11 +291,6 @@ searchName fc rigc opts hints env target topty (n, ndef)
          let ty = type ndef
          let True = usableName (fullname ndef)
              | _ => noResult
-         let namety : NameType
-                 = case definition ndef of
-                        DCon tag arity _ => DataCon tag arity
-                        TCon tag arity _ _ _ _ _ _ => TyCon tag arity
-                        _ => Func
          log "interaction.search" 5 $ "Trying " ++ show (fullname ndef)
          nty <- nf defs env (embed ty)
          (args, appTy) <- mkArgs fc rigc env nty
@@ -309,7 +304,7 @@ searchName fc rigc opts hints env target topty (n, ndef)
                    (filter explicit args)
          args' <- traverse (searchIfHole fc opts hints topty env)
                            args
-         mkCandidates fc (Ref fc namety n) [] args'
+         mkCandidates fc (Ref fc (getDefNameType ndef) n) [] args'
   where
     -- we can only use the name in a search result if it's a user writable
     -- name (so, no recursive with blocks or case blocks, for example)
@@ -394,32 +389,32 @@ tryRecursive fc rig opts hints env ty topty rdata
       -- one where there's a local in another, or that constructor applications
       -- differ somewhere)
       argDiff : Term vs -> Term vs' -> Bool
-      argDiff (Local _ _ _ _) _ = False
+      argDiff (Local {}) _ = False
       argDiff (Ref _ _ fn) (Ref _ _ fn') = fn /= fn'
-      argDiff (Bind _ _ _ _) _ = False
-      argDiff _ (Bind _ _ _ _) = False
+      argDiff (Bind {}) _ = False
+      argDiff _ (Bind {}) = False
       argDiff (App _ f a) (App _ f' a')
          = structDiff f f' || structDiff a a'
       argDiff (PrimVal _ c) (PrimVal _ c') = c /= c'
-      argDiff (Erased _ _) _ = False
-      argDiff _ (Erased _ _) = False
-      argDiff (TType _ _) (TType _ _) = False
+      argDiff (Erased {}) _ = False
+      argDiff _ (Erased {}) = False
+      argDiff (TType {}) (TType {}) = False
       argDiff (As _ _ _ x) y = argDiff x y
       argDiff x (As _ _ _ y) = argDiff x y
       argDiff _ _ = True
 
       appsDiff : Term vs -> Term vs' -> List (Term vs) -> List (Term vs') ->
                  Bool
-      appsDiff (Ref _ (DataCon _ _) f) (Ref _ (DataCon _ _) f') args args'
+      appsDiff (Ref _ (DataCon {}) f) (Ref _ (DataCon {}) f') args args'
          = f /= f' || any (uncurry argDiff) (zip args args')
-      appsDiff (Ref _ (TyCon _ _) f) (Ref _ (TyCon _ _) f') args args'
+      appsDiff (Ref _ (TyCon _) f) (Ref _ (TyCon _) f') args args'
          = f /= f' || any (uncurry argDiff) (zip args args')
       appsDiff (Ref _ _ f) (Ref _ _ f') args args'
          = f == f'
            && length args == length args'
            && any (uncurry argDiff) (zip args args')
-      appsDiff (Ref _ (DataCon _ _) f) (Local _ _ _ _) _ _ = True
-      appsDiff (Local _ _ _ _) (Ref _ (DataCon _ _) f) _ _ = True
+      appsDiff (Ref _ (DataCon {}) f) (Local {}) _ _ = True
+      appsDiff (Local {}) (Ref _ (DataCon {}) f) _ _ = True
       appsDiff f f' [] [] = argDiff f f'
       appsDiff _ _ _ _ = False -- can't be sure...
 
@@ -435,7 +430,7 @@ tryRecursive fc rig opts hints env ty topty rdata
 
 -- A local is usable as long as its type isn't a hole
 usableLocal : FC -> Env Term vars -> NF vars -> Bool
-usableLocal loc env (NApp _ (NMeta _ _ _) args) = False
+usableLocal loc env (NApp _ (NMeta {}) args) = False
 usableLocal loc _ _ = True
 
 searchLocalWith : {vars : _} ->
@@ -486,7 +481,7 @@ searchLocalWith {vars} fc nofn rig opts hints env ((p, pty) :: rest) ty topty
     findPos : Defs -> Term vars ->
               (Term vars -> Term vars) ->
               NF vars -> NF vars -> Core (Search (Term vars, ExprDefs))
-    findPos defs prf f x@(NTCon pfc pn _ _ [(fc1, xty), (fc2, yty)]) target
+    findPos defs prf f x@(NTCon pfc pn _ [(fc1, xty), (fc2, yty)]) target
         = getSuccessful fc rig opts False env ty topty
               [findDirect defs prf f x target,
                  (do fname <- maybe (throw (InternalError "No fst"))
@@ -608,10 +603,10 @@ tryIntermediateWith fc rig opts hints env ((p, pty) :: rest) ty topty
                                             topty]
   where
     matchable : Defs -> NF vars -> Core Bool
-    matchable defs (NBind fc x (Pi _ _ _ _) sc)
+    matchable defs (NBind fc x (Pi {}) sc)
         = matchable defs !(sc defs (toClosure defaultOpts env
                                               (Erased fc Placeholder)))
-    matchable defs (NTCon _ _ _ _ _) = pure True
+    matchable defs (NTCon {}) = pure True
     matchable _ _ = pure False
 
     applyLocal : Defs -> Term vars ->
@@ -677,11 +672,11 @@ tryIntermediateRec fc rig opts hints env ty topty (Just rd)
          makeHelper fc rig opts' env letty ty recsearch
   where
     isSingleCon : Defs -> ClosedNF -> Core Bool
-    isSingleCon defs (NBind fc x (Pi _ _ _ _) sc)
+    isSingleCon defs (NBind fc x (Pi {}) sc)
         = isSingleCon defs !(sc defs (toClosure defaultOpts Env.empty
                                               (Erased fc Placeholder)))
-    isSingleCon defs (NTCon _ n _ _ _)
-        = do Just (TCon _ _ _ _ _ _ (Just [con]) _) <- lookupDefExact n (gamma defs)
+    isSingleCon defs (NTCon _ n _ _)
+        = do Just (TCon _ _ _ _ _ (Just [con]) _) <- lookupDefExact n (gamma defs)
                   | _ => pure False
              pure True
     isSingleCon _ _ = pure False
@@ -711,7 +706,7 @@ searchType {vars} fc rig opts hints env topty Z (Bind bfc n b@(Pi fc' c info ty)
                              (Bind bfc n' (Lam fc' c info ty) sc, ds)) scVal))]
 searchType fc rig opts hints env topty _ ty
     = case getFnArgs ty of
-           (Ref rfc (TyCon t ar) n, args) =>
+           (Ref rfc (TyCon ar) n, args) =>
                 do defs <- get Ctxt
                    if length args == ar
                      then do sd <- getSearchData fc False n
@@ -779,7 +774,7 @@ search fc rig opts hints topty n_in
                    -- if it's arising from an auto implicit
                    case definition gdef of
                         Hole locs _ => searchHole fc rig opts hints n locs topty defs gdef
-                        BySearch _ _ _ => searchHole fc rig opts hints n
+                        BySearch {} => searchHole fc rig opts hints n
                                                    !(getArity defs Env.empty (type gdef))
                                                    topty defs gdef
                         _ => do log "interaction.search" 10 $ show n_in ++ " not a hole"
@@ -804,8 +799,8 @@ getLHSData defs (Just tm)
     = pure $ getLHS !(toFullNames !(normaliseHoles defs Env.empty tm))
   where
     getLHS : {vars : _} -> Term vars -> Maybe RecData
-    getLHS (Bind _ _ (PVar _ _ _ _) sc) = getLHS sc
-    getLHS (Bind _ _ (PLet _ _ _ _) sc) = getLHS sc
+    getLHS (Bind _ _ (PVar {}) sc) = getLHS sc
+    getLHS (Bind _ _ (PLet {}) sc) = getLHS sc
     getLHS sc
         = case getFn sc of
                Ref _ _ n => Just (MkRecData n sc)

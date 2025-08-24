@@ -24,6 +24,7 @@ import Data.List
 import Data.List1
 import Data.String
 import Libraries.Data.NameMap
+import Libraries.Data.NatSet
 import Libraries.Data.StringMap
 import Libraries.Data.WithDefault
 
@@ -91,32 +92,32 @@ initDef fc n env ty (_ :: opts) = initDef fc n env ty opts
 -- generalising partially evaluated definitions and (potentially) in interactive
 -- editing
 findInferrable : {auto c : Ref Ctxt Defs} ->
-                 Defs -> ClosedNF -> Core (List Nat)
-findInferrable defs ty = fi 0 0 [] [] ty
+                 Defs -> ClosedNF -> Core NatSet
+findInferrable defs ty = fi 0 0 [] NatSet.empty ty
   where
     mutual
       -- Add to the inferrable arguments from the given type. An argument is
       -- inferrable if it's guarded by a constructor, or on its own
-      findInf : List Nat -> List (Name, Nat) ->
-                ClosedNF -> Core (List Nat)
+      findInf : NatSet -> List (Name, Nat) ->
+                ClosedNF -> Core NatSet
       findInf acc pos (NApp _ (NRef Bound n) [])
           = case lookup n pos of
                  Nothing => pure acc
-                 Just p => if p `elem` acc then pure acc else pure (p :: acc)
+                 Just p => if p `elem` acc then pure acc else pure (NatSet.insert p acc)
       findInf acc pos (NDCon _ _ _ _ args)
           = do args' <- traverse (evalClosure defs . snd) args
                findInfs acc pos args'
-      findInf acc pos (NTCon _ _ _ _ args)
+      findInf acc pos (NTCon _ _ _ args)
           = do args' <- traverse (evalClosure defs . snd) args
                findInfs acc pos args'
       findInf acc pos (NDelayed _ _ t) = findInf acc pos t
       findInf acc _ _ = pure acc
 
-      findInfs : List Nat -> List (Name, Nat) -> List ClosedNF -> Core (List Nat)
+      findInfs : NatSet -> List (Name, Nat) -> List ClosedNF -> Core NatSet
       findInfs acc pos [] = pure acc
       findInfs acc pos (n :: ns) = findInf !(findInfs acc pos ns) pos n
 
-    fi : Nat -> Int -> List (Name, Nat) -> List Nat -> ClosedNF -> Core (List Nat)
+    fi : Nat -> Int -> List (Name, Nat) -> NatSet -> ClosedNF -> Core NatSet
     fi pos i args acc (NBind fc x (Pi _ _ _ aty) sc)
         = do let argn = MN "inf" i
              sc' <- sc defs (toClosure defaultOpts Env.empty (Ref fc Bound argn))
@@ -144,10 +145,12 @@ processType : {vars : _} ->
               List ElabOpt -> NestedNames vars -> Env Term vars ->
               FC -> RigCount -> Visibility ->
               List FnOpt -> ImpTy -> Core ()
-processType {vars} eopts nest env fc rig vis opts (MkImpTy tfc n_in ty_raw)
-    = do n <- inCurrentNS n_in.val
+processType {vars} eopts nest env fc rig vis opts ty_raw
+    = do let typeName = ty_raw.tyName
+         n <- inCurrentNS typeName.val
+         let tfc = ty_raw.fc
 
-         addNameLoc n_in.fc n
+         addNameLoc typeName.fc n
 
          log "declare.type" 1 $ "Processing " ++ show n
          log "declare.type" 5 $ unwords ["Checking type decl:", show rig, show n, ":", show ty_raw]
@@ -162,7 +165,7 @@ processType {vars} eopts nest env fc rig vis opts (MkImpTy tfc n_in ty_raw)
          ty <-
              wrapErrorC eopts (InType fc n) $
                    checkTerm idx InType (HolesOkay :: eopts) nest env
-                             (IBindHere fc (PI erased) ty_raw)
+                             (IBindHere fc (PI erased) ty_raw.val)
                              (gType fc u)
          logTermNF "declare.type" 3 ("Type of " ++ show n) Env.empty (abstractFullEnvType tfc env ty)
 
@@ -188,7 +191,7 @@ processType {vars} eopts nest env fc rig vis opts (MkImpTy tfc n_in ty_raw)
          log "declare.type" 2 $ "Setting options for " ++ show n ++ ": " ++ show opts
          let name = Resolved idx
          let isNested : Name -> Bool
-             isNested (Nested _ _) = True
+             isNested (Nested {}) = True
              isNested (NS _ n) = isNested n
              isNested _ = False
          let nested = not (isNested n)
@@ -201,7 +204,7 @@ processType {vars} eopts nest env fc rig vis opts (MkImpTy tfc n_in ty_raw)
          addTyDecl fc (Resolved idx) env ty -- for definition generation
 
          log "metadata.names" 7 $ "processType is adding ↓"
-         addNameType n_in.fc (Resolved idx) env ty -- for looking up types
+         addNameType typeName.fc (Resolved idx) env ty -- for looking up types
 
          traverse_ addToSave (keys (getMetas ty))
          addToSave n
@@ -213,5 +216,5 @@ processType {vars} eopts nest env fc rig vis opts (MkImpTy tfc n_in ty_raw)
                  log "module.hash" 15 "Adding hash for type with name \{show n}"
 
          when (showShadowingWarning !getSession) $
-            whenJust (fromList (checkForShadowing StringMap.empty ty_raw))
+            whenJust (fromList (checkForShadowing StringMap.empty ty_raw.val))
                 $ recordWarning . ShadowingLocalBindings fc

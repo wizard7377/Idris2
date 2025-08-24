@@ -36,7 +36,7 @@ expandAmbigName : {vars : _} ->
                   RawImp -> Maybe (Glued vars) -> Core RawImp
 expandAmbigName (InLHS _) nest env orig args (IBindVar fc n) exp
     = do est <- get EST
-         if UN (Basic n) `elem` lhsPatVars est
+         if n `elem` lhsPatVars est
             then pure $ IMustUnify fc NonLinearVar orig
             else pure $ orig
 expandAmbigName mode nest env orig args (IVar fc x) exp
@@ -73,7 +73,7 @@ expandAmbigName mode nest env orig args (IVar fc x) exp
                                      do log "elab.ambiguous" 10 $
                                           "Ambiguous: " ++ joinBy ", " (map (show . fst) nalts)
                                         pure $ IAlternative fc
-                                                      (uniqType primNs x args)
+                                                      (uniqType x args primNs)
                                                       (map (mkAlt primApp est) nalts)
   where
     lookupUN : Maybe UserName -> UserNameMap a -> Maybe a
@@ -91,21 +91,22 @@ expandAmbigName mode nest env orig args (IVar fc x) exp
 
     -- If there's multiple alternatives and all else fails, resort to using
     -- the primitive directly
-    uniqType : PrimNames -> Name -> List (FC, Maybe (Maybe Name), RawImp) -> AltType
-    uniqType (MkPrimNs (Just fi) _ _ _ _ _ _) n [(_, _, IPrimVal fc (BI x))]
+    -- The order of the arguments have a big effect on case-tree size
+    uniqType : Name -> List (FC, Maybe (Maybe Name), RawImp) -> PrimNames -> AltType
+    uniqType n [(_, _, IPrimVal fc (BI x))] (MkPrimNs (Just fi) _ _ _ _ _ _)
         = UniqueDefault (IPrimVal fc (BI x))
-    uniqType (MkPrimNs _ (Just si) _ _ _ _ _) n [(_, _, IPrimVal fc (Str x))]
+    uniqType n [(_, _, IPrimVal fc (Str x))] (MkPrimNs _ (Just si) _ _ _ _ _)
         = UniqueDefault (IPrimVal fc (Str x))
-    uniqType (MkPrimNs _ _ (Just ci) _ _ _ _) n [(_, _, IPrimVal fc (Ch x))]
+    uniqType n [(_, _, IPrimVal fc (Ch x))] (MkPrimNs _ _ (Just ci) _ _ _ _)
         = UniqueDefault (IPrimVal fc (Ch x))
-    uniqType (MkPrimNs _ _ _ (Just di) _ _ _) n [(_, _, IPrimVal fc (Db x))]
+    uniqType n [(_, _, IPrimVal fc (Db x))] (MkPrimNs _ _ _ (Just di) _ _ _)
         = UniqueDefault (IPrimVal fc (Db x))
-    uniqType (MkPrimNs _ _ _ _ (Just dt) _ _) n [(_, _, IQuote fc tm)]
+    uniqType n [(_, _, IQuote fc tm)] (MkPrimNs _ _ _ _ (Just dt) _ _)
         = UniqueDefault (IQuote fc tm)
         {-
-    uniqType (MkPrimNs _ _ _ _ _ (Just dn) _) n [(_, _, IQuoteName fc tm)]
+    uniqType n [(_, _, IQuoteName fc tm)] (MkPrimNs _ _ _ _ _ (Just dn) _)
         = UniqueDefault (IQuoteName fc tm)
-    uniqType (MkPrimNs _ _ _ _ _ _ (Just ddl)) n [(_, _, IQuoteDecl fc tm)]
+    uniqType n [(_, _, IQuoteDecl fc tm)] (MkPrimNs _ _ _ _ _ _ (Just ddl))
         = UniqueDefault (IQuoteDecl fc tm)
         -}
     uniqType _ _ _ = Unique
@@ -123,8 +124,8 @@ expandAmbigName mode nest env orig args (IVar fc x) exp
     -- If it's not a constructor application, dot it
     wrapDot : Bool -> EState vars ->
               ElabMode -> Name -> List RawImp -> Def -> RawImp -> RawImp
-    wrapDot _ _ _ _ _ (DCon _ _ _) tm = tm
-    wrapDot _ _ _ _ _ (TCon _ _ _ _ _ _ _ _) tm = tm
+    wrapDot _ _ _ _ _ (DCon {}) tm = tm
+    wrapDot _ _ _ _ _ (TCon {}) tm = tm
     -- Leave primitive applications alone, because they'll be inlined
     -- before compiling the case tree
     wrapDot prim est (InLHS _) n' [arg] _ tm
@@ -220,10 +221,10 @@ mutual
   mightMatch : {auto c : Ref Ctxt Defs} ->
                {vars : _} ->
                Defs -> NF vars -> ClosedNF -> Core TypeMatch
-  mightMatch defs target (NBind fc n (Pi _ _ _ _) sc)
+  mightMatch defs target (NBind fc n (Pi {}) sc)
       = mightMatchD defs target !(sc defs (toClosure defaultOpts Env.empty (Erased fc Placeholder)))
-  mightMatch defs (NBind _ _ _ _) (NBind _ _ _ _) = pure Poly -- lambdas might match
-  mightMatch defs (NTCon _ n t a args) (NTCon _ n' t' a' args')
+  mightMatch defs (NBind {}) (NBind {}) = pure Poly -- lambdas might match
+  mightMatch defs (NTCon _ n a args) (NTCon _ n' a' args')
       = if n == n'
            then do amatch <- mightMatchArgs defs (map snd args) (map snd args')
                    if amatch then pure Concrete else pure NoMatch
@@ -235,11 +236,11 @@ mutual
            else pure NoMatch
   mightMatch defs (NPrimVal _ x) (NPrimVal _ y)
       = if x == y then pure Concrete else pure NoMatch
-  mightMatch defs (NType _ _) (NType _ _) = pure Concrete
-  mightMatch defs (NApp _ _ _) _ = pure Poly
-  mightMatch defs (NErased _ _) _ = pure Poly
-  mightMatch defs _ (NApp _ _ _) = pure Poly
-  mightMatch defs _ (NErased _ _) = pure Poly
+  mightMatch defs (NType {}) (NType {}) = pure Concrete
+  mightMatch defs (NApp {}) _ = pure Poly
+  mightMatch defs (NErased {}) _ = pure Poly
+  mightMatch defs _ (NApp {}) = pure Poly
+  mightMatch defs _ (NErased {}) = pure Poly
   mightMatch _ _ _ = pure NoMatch
 
 -- Return true if the given name could return something of the given target type
@@ -255,7 +256,7 @@ couldBeFn : {auto c : Ref Ctxt Defs} ->
             {vars : _} ->
             Defs -> NF vars -> RawImp -> Core TypeMatch
 couldBeFn defs ty (IVar _ n) = couldBeName defs ty n
-couldBeFn defs ty (IAlternative _ _ _) = pure Concrete
+couldBeFn defs ty (IAlternative {}) = pure Concrete
 couldBeFn defs ty _ = pure Poly
 
 -- Returns Nothing if there's no possibility the expression's type matches
@@ -265,17 +266,17 @@ couldBeFn defs ty _ = pure Poly
 couldBe : {auto c : Ref Ctxt Defs} ->
           {vars : _} ->
           Defs -> NF vars -> RawImp -> Core (Maybe (Bool, RawImp))
-couldBe {vars} defs ty@(NTCon _ n _ _ _) app
+couldBe {vars} defs ty@(NTCon _ n _ _) app
    = case !(couldBeFn {vars} defs ty (getFn app)) of
           Concrete => pure $ Just (True, app)
           Poly => pure $ Just (False, app)
           NoMatch => pure Nothing
-couldBe {vars} defs ty@(NPrimVal _ _) app
+couldBe {vars} defs ty@(NPrimVal {}) app
    = case !(couldBeFn {vars} defs ty (getFn app)) of
           Concrete => pure $ Just (True, app)
           Poly => pure $ Just (False, app)
           NoMatch => pure Nothing
-couldBe {vars} defs ty@(NType _ _) app
+couldBe {vars} defs ty@(NType {}) app
    = case !(couldBeFn {vars} defs ty (getFn app)) of
           Concrete => pure $ Just (True, app)
           Poly => pure $ Just (False, app)

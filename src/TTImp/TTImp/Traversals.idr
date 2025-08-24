@@ -26,10 +26,6 @@ parameters (f : RawImp' nm -> RawImp' nm)
   mapImpClause (ImpossibleClause fc lhs) = ImpossibleClause fc (mapTTImp lhs)
 
   export
-  mapImpTy : ImpTy' nm -> ImpTy' nm
-  mapImpTy (MkImpTy fc n ty) = MkImpTy fc n (mapTTImp ty)
-
-  export
   mapFnOpt : FnOpt' nm -> FnOpt' nm
   mapFnOpt Unsafe = Unsafe
   mapFnOpt Inline = Inline
@@ -49,27 +45,23 @@ parameters (f : RawImp' nm -> RawImp' nm)
   export
   mapImpData : ImpData' nm -> ImpData' nm
   mapImpData (MkImpData fc n tycon opts datacons)
-    = MkImpData fc n (map mapTTImp tycon) opts (map mapImpTy datacons)
+    = MkImpData fc n (map mapTTImp tycon) opts (map (map mapTTImp) datacons)
   mapImpData (MkImpLater fc n tycon) = MkImpLater fc n (mapTTImp tycon)
 
   export
-  mapIField : IField' nm -> IField' nm
-  mapIField (MkIField fc rig pinfo n t) = MkIField fc rig (mapPiInfo pinfo) n (mapTTImp t)
-
-  export
-  mapImpRecord : ImpRecord' nm -> ImpRecord' nm
-  mapImpRecord (MkImpRecord fc n params opts conName fields)
-    = MkImpRecord fc n (map (map $ map $ bimap mapPiInfo mapTTImp) params) opts conName (map mapIField fields)
-
+  mapImpRecord : ImpRecordData nm -> ImpRecordData nm
+  mapImpRecord (MkImpRecord header body)
+    = MkImpRecord (map (map (map (map mapTTImp))) header)
+                  (map (map (map (map mapTTImp))) body)
 
   export
   mapImpDecl : ImpDecl' nm -> ImpDecl' nm
   mapImpDecl (IClaim (MkWithData fc (MkIClaimData rig vis opts ty)))
-    = IClaim (MkWithData fc (MkIClaimData rig vis (map mapFnOpt opts) (mapImpTy ty)))
+    = IClaim (MkWithData fc (MkIClaimData rig vis (map mapFnOpt opts) (map mapTTImp ty)))
   mapImpDecl (IData fc vis mtreq dat) = IData fc vis mtreq (mapImpData dat)
   mapImpDecl (IDef fc n cls) = IDef fc n (map mapImpClause cls)
   mapImpDecl (IParameters fc params xs) = IParameters fc params (assert_total $ map mapImpDecl xs)
-  mapImpDecl (IRecord fc mstr x y rec) = IRecord fc mstr x y (mapImpRecord rec)
+  mapImpDecl (IRecord fc mstr x y rec) = IRecord fc mstr x y (map mapImpRecord rec)
   mapImpDecl (IFail fc mstr xs) = IFail fc mstr (assert_total $ map mapImpDecl xs)
   mapImpDecl (INamespace fc mi xs) = INamespace fc mi (assert_total $ map mapImpDecl xs)
   mapImpDecl (ITransform fc n t u) = ITransform fc n (mapTTImp t) (mapTTImp u)
@@ -89,7 +81,7 @@ parameters (f : RawImp' nm -> RawImp' nm)
   mapAltType Unique = Unique
   mapAltType (UniqueDefault t) = UniqueDefault (mapTTImp t)
 
-  mapTTImp t@(IVar _ _) = f t
+  mapTTImp t@(IVar {}) = f t
   mapTTImp (IPi fc rig pinfo x argTy retTy)
     = f $ IPi fc rig (mapPiInfo pinfo) x (mapTTImp argTy) (mapTTImp retTy)
   mapTTImp (ILam fc rig pinfo x argTy lamTy)

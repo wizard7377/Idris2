@@ -45,7 +45,7 @@ sizeEq (TForce _ _ t) (TForce _ _ t') = sizeEq t t'
 sizeEq (PrimVal _ c) (PrimVal _ c') = c == c'
 -- traverse dotted LHS terms
 sizeEq t (Erased _ (Dotted t')) = eqTerm t t' -- t' is no longer a pattern
-sizeEq (TType _ _) (TType _ _) = True
+sizeEq (TType {}) (TType {}) = True
 sizeEq _ _ = False
 
 -- Remove all force and delay annotations which are nothing to do with
@@ -93,8 +93,12 @@ mutual
       = findSC defs env InDelay pats tm
   findSC defs env g pats (TDelay _ _ _ tm)
       = findSC defs env g pats tm
+  findSC defs env g pats (TForce _ _ tm)
+      = findSC defs env Unguarded pats tm
   findSC defs env g pats tm
       = do let (fn, args) = getFnArgs tm
+           False <- isAssertTotal fn
+               | True => pure []
            -- if it's a 'case' or 'if' just go straight into the arguments
            Nothing <- handleCase fn args
                | Just res => pure res
@@ -103,7 +107,7 @@ mutual
            case (g, fn', args) of
     -- If we're InDelay and find a constructor (or a function call which is
     -- guaranteed to return a constructor; AllGuarded set), continue as InDelay
-             (InDelay, Ref fc (DataCon _ _) cn, args) =>
+             (InDelay, Ref fc (DataCon {}) cn, args) =>
                  do scs <- traverse (findSC defs env InDelay pats) args
                     pure (concat scs)
              -- If we're InDelay otherwise, just check the arguments, the
@@ -111,9 +115,9 @@ mutual
              (InDelay, _, args) =>
                  do scs <- traverse (findSC defs env Unguarded pats) args
                     pure (concat scs)
-             (Guarded, Ref fc (DataCon _ _) cn, args) =>
+             (Guarded, Ref fc (DataCon {}) cn, args) =>
                     findSCcall defs env Guarded pats fc cn args
-             (Toplevel, Ref fc (DataCon _ _) cn, args) =>
+             (Toplevel, Ref fc (DataCon {}) cn, args) =>
                     findSCcall defs env Guarded pats fc cn args
              (_, Ref fc Func fn, args) =>
                  do logC "totality" 50 $
@@ -130,6 +134,11 @@ mutual
                     then Just <$> findSCcall defs env g pats fc n args
                     else pure Nothing
         handleCase _ _ = pure Nothing
+
+        isAssertTotal : Term vars -> Core Bool
+        isAssertTotal (Ref fc Func fn)
+            = pure $ !(toFullNames fn) == NS builtinNS (UN $ Basic "assert_total")
+        isAssertTotal tm = pure False
 
         conIfGuarded : Term vars -> Core (Term vars)
         conIfGuarded (Ref fc Func n)
@@ -160,14 +169,14 @@ mutual
   sizeCompareApp : {auto defs : Defs} -> Nat -> Term vars -> Term vars -> Core SizeChange
 
   sizeCompare fuel s (Erased _ (Dotted t)) = sizeCompare fuel s t
-  sizeCompare fuel _ (Erased _ _) = pure Unknown -- incomparable!
+  sizeCompare fuel _ (Erased {}) = pure Unknown -- incomparable!
   -- for an as pattern, it's smaller if it's smaller than either part
   sizeCompare fuel s (As _ _ p t)
       = knownOr (sizeCompare fuel s p) (sizeCompare fuel s t)
   sizeCompare fuel (As _ _ p s) t
       = knownOr (sizeCompare fuel p t) (sizeCompare fuel s t)
   -- if they're both metas, let sizeEq check if they're the same
-  sizeCompare fuel s@(Meta _ _ _ _) t@(Meta _ _ _ _) = pure (if sizeEq s t then Same else Unknown)
+  sizeCompare fuel s@(Meta {}) t@(Meta {}) = pure (if sizeEq s t then Same else Unknown)
   -- otherwise try to expand RHS meta
   sizeCompare fuel s@(Meta n _ i args) t = do
     Just gdef <- lookupCtxtExact (Resolved i) (gamma defs) | _ => pure Unknown
@@ -204,8 +213,8 @@ mutual
     let (f, args) = getFnArgs t in
     let (g, args') = getFnArgs s in
     case f of
-      Ref _ (TyCon _ _) cn => case g of
-        Ref _ (TyCon _ _) cn' => if cn == cn'
+      Ref _ (TyCon {}) cn => case g of
+        Ref _ (TyCon {}) cn' => if cn == cn'
             then (Unknown /=) <$> sizeCompareProdConArgs fuel args' args
             else pure False
         _ => pure False
@@ -360,19 +369,17 @@ mutual
       = do fn <- getFullName fn_in
            logC "totality.termination.sizechange" 10 $ do pure $ "Looking under " ++ show !(toFullNames fn)
            aSmaller <- resolved (gamma defs) (NS builtinNS (UN $ Basic "assert_smaller"))
-           cond [(fn == NS builtinNS (UN $ Basic "assert_total"), pure [])
-                ,(caseFn fn,
-                    do scs1 <- traverse (findSC defs env g pats) args
-                       mps  <- getCasePats defs fn pats args
-                       scs2 <- traverse (findInCase defs g) $ fromMaybe [] mps
-                       pure (concat (scs1 ++ scs2)))
-              ]
-              (do scs <- traverse (findSC defs env g pats) args
-                  pure ([MkSCCall fn
-                           (fromListList
-                                !(traverse (mkChange defs aSmaller pats) args))
-                           fc]
-                           ++ concat scs))
+           if caseFn fn
+              then do scs1 <- traverse (findSC defs env g pats) args
+                      mps  <- getCasePats defs fn pats args
+                      scs2 <- traverse (findInCase defs g) $ fromMaybe [] mps
+                      pure (concat (scs1 ++ scs2))
+              else do scs <- traverse (findSC defs env g pats) args
+                      pure $ [MkSCCall fn
+                               (fromListList
+                                    !(traverse (mkChange defs aSmaller pats) args))
+                               fc]
+                               ++ concat scs
 
   findInCase : {auto c : Ref Ctxt Defs} ->
                Defs -> Guardedness ->

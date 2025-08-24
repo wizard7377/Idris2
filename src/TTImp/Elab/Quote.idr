@@ -104,33 +104,15 @@ mutual
   getUnquoteUpdate (ISetField p t) = pure $ ISetField p !(getUnquote t)
   getUnquoteUpdate (ISetFieldApp p t) = pure $ ISetFieldApp p !(getUnquote t)
 
-  getUnquoteTy : {auto c : Ref Ctxt Defs} ->
-                 {auto q : Ref Unq (List (Name, FC, RawImp))} ->
-                 {auto u : Ref UST UState} ->
-                 ImpTy ->
-                 Core ImpTy
-  getUnquoteTy (MkImpTy fc n t) = pure $ MkImpTy fc n !(getUnquote t)
-
-  getUnquoteField : {auto c : Ref Ctxt Defs} ->
-                    {auto q : Ref Unq (List (Name, FC, RawImp))} ->
-                    {auto u : Ref UST UState} ->
-                    IField ->
-                    Core IField
-  getUnquoteField (MkIField fc c p n ty)
-      = pure $ MkIField fc c p n !(getUnquote ty)
-
   getUnquoteRecord : {auto c : Ref Ctxt Defs} ->
                      {auto q : Ref Unq (List (Name, FC, RawImp))} ->
                      {auto u : Ref UST UState} ->
-                     ImpRecord ->
-                     Core ImpRecord
-  getUnquoteRecord (MkImpRecord fc n ps opts cn fs)
-      = pure $ MkImpRecord fc n !(traverse unqPair ps) opts cn
-                           !(traverse getUnquoteField fs)
-    where
-      unqPair : (Name, RigCount, PiInfo RawImp, RawImp) ->
-                Core (Name, RigCount, PiInfo RawImp, RawImp)
-      unqPair (n, c, p, t) = pure (n, c, p, !(getUnquote t))
+                     ImpRecordData Name ->
+                     Core (ImpRecordData Name)
+  getUnquoteRecord (MkImpRecord header body)
+        -- unlike before, we are also unquoting the default value, maybe this is important?
+      = pure $ MkImpRecord !(traverse (traverse (traverse (traverse getUnquote))) header)
+                           !(traverse (traverse (traverse (traverse getUnquote))) body)
 
   getUnquoteData : {auto c : Ref Ctxt Defs} ->
                    {auto q : Ref Unq (List (Name, FC, RawImp))} ->
@@ -139,7 +121,7 @@ mutual
                    Core ImpData
   getUnquoteData (MkImpData fc n tc opts cs)
       = pure $ MkImpData fc n !(traverseOpt getUnquote tc) opts
-                         !(traverse getUnquoteTy cs)
+                         !(traverse (traverse getUnquote) cs)
   getUnquoteData (MkImpLater fc n tc)
       = pure $ MkImpLater fc n !(getUnquote tc)
 
@@ -149,20 +131,17 @@ mutual
                    ImpDecl ->
                    Core ImpDecl
   getUnquoteDecl (IClaim (MkWithData fc (MkIClaimData c v opts ty)))
-      = pure $ IClaim (MkWithData fc (MkIClaimData c v opts !(getUnquoteTy ty)))
+      = pure $ IClaim (MkWithData fc (MkIClaimData c v opts !(traverse getUnquote ty)))
   getUnquoteDecl (IData fc v mbt d)
       = pure $ IData fc v mbt !(getUnquoteData d)
   getUnquoteDecl (IDef fc v d)
       = pure $ IDef fc v !(traverse getUnquoteClause d)
   getUnquoteDecl (IParameters fc ps ds)
-      = pure $ IParameters fc
-                           !(traverseList1 unqTuple ps)
+      = pure $ IParameters fc -- We also unquote default arguments here too
+                           !(traverseList1 (traverse (traverse getUnquote)) ps)
                            !(traverse getUnquoteDecl ds)
-    where
-      unqTuple : (Name, RigCount, PiInfo RawImp, RawImp) -> Core (Name, RigCount, PiInfo RawImp, RawImp)
-      unqTuple (n, rig, i, t) = pure (n, rig, i, !(getUnquote t))
   getUnquoteDecl (IRecord fc ns v mbt d)
-      = pure $ IRecord fc ns v mbt !(getUnquoteRecord d)
+      = pure $ IRecord fc ns v mbt !(traverse getUnquoteRecord d)
   getUnquoteDecl (INamespace fc ns ds)
       = pure $ INamespace fc ns !(traverse getUnquoteDecl ds)
   getUnquoteDecl (ITransform fc n l r)
@@ -186,7 +165,7 @@ bindUnqs ((qvar, fc, esctm) :: qs) rig elabinfo nest env tm
          Just (idx, gdef) <- lookupCtxtExactI (reflectionttimp "TTImp") (gamma defs)
               | _ => throw (UndefinedName fc (reflectionttimp "TTImp"))
          (escv, escty) <- check rig elabinfo nest env esctm
-                                (Just (gnf env (Ref fc (TyCon 0 0)
+                                (Just (gnf env (Ref fc (TyCon 0)
                                            (Resolved idx))))
          sc <- bindUnqs qs rig elabinfo nest env tm
          pure (Bind fc qvar (Let fc (rigMult top rig) escv !(getTerm escty))

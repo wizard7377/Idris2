@@ -72,23 +72,6 @@ public export
 data HidingDirective = HideName Name
                      | HideFixity Fixity Name
 
-%hide Core.WithData.WithName
--------------------------------------------------------------------------------
--- With Name functor to carry name information with a payload
-public export
-record WithName (ty : Type) where
-  constructor MkWithName
-  name : WithFC Name
-  val : ty
-
-export
-mapWName : (ty -> sy) -> WithName ty -> WithName sy
-mapWName f = {val $= f}
-
-export
-traverseWName : (ty -> Core sy) -> WithName ty -> Core (WithName sy)
-traverseWName f (MkWithName name val) = MkWithName name <$> f val
-
 -------------------------------------------------------------------------------
 
 mutual
@@ -175,7 +158,7 @@ mutual
        PIfThenElse : FC -> PTerm' nm -> PTerm' nm -> PTerm' nm -> PTerm' nm
        PComprehension : FC -> PTerm' nm -> List (PDo' nm) -> PTerm' nm
        PRewrite : FC -> PTerm' nm -> PTerm' nm -> PTerm' nm
-       -- A list range  [x,y..z]
+       -- A list range [x,y..z]
        PRange : FC -> PTerm' nm -> Maybe (PTerm' nm) -> PTerm' nm -> PTerm' nm
        -- A stream range [x,y..]
        PRangeStream : FC -> PTerm' nm -> Maybe (PTerm' nm) -> PTerm' nm
@@ -217,7 +200,7 @@ mutual
   getPTermLoc (PRunElab fc _) = fc
   getPTermLoc (PHole fc _ _) = fc
   getPTermLoc (PType fc) = fc
-  getPTermLoc (PAs fc _  _ _) = fc
+  getPTermLoc (PAs fc _ _ _) = fc
   getPTermLoc (PDotted fc _) = fc
   getPTermLoc (PImplicit fc) = fc
   getPTermLoc (PInfer fc) = fc
@@ -313,19 +296,6 @@ mutual
     type : PTerm' nm
 
   public export
-  BasicBinder : Type
-  BasicBinder = BasicBinder' Name
-
-  ||| A binder with quantity information attached
-  ||| basicBinder := qty plainBinder
-  public export
-  record BasicBinder' (nm : Type) where
-    constructor MkBasicBinder
-    rig : RigCount
-    name : WithFC Name
-    type : PTerm' nm
-
-  public export
   PBinder : Type
   PBinder = PBinder' Name
 
@@ -353,7 +323,6 @@ mutual
   public export
   MkFullBinder : PiInfo (PTerm' nm) -> RigCount -> WithFC Name -> PTerm' nm -> PBinder' nm
   MkFullBinder info rig x y = MkPBinder info (MkBasicMultiBinder rig (singleton x) y)
-
 
   export
   getLoc : PDo' nm -> FC
@@ -420,7 +389,7 @@ mutual
        MkPRecord : (tyname : Name) ->
                    (params : List (PBinder' nm)) ->
                    (opts : List DataOpt) ->
-                   (conName : Maybe (String, Name)) ->
+                   (conName : Maybe (WithDoc $ AddFC Name)) ->
                    (decls : List (PField' nm)) ->
                    PRecordDecl' nm
        MkPRecordLater : (tyname : Name) ->
@@ -493,15 +462,9 @@ mutual
        -- There is no nm on Directive
        ForeignImpl : Name -> List PTerm -> Directive
 
-
   public export
-  record RecordField' (nm : Type) where
-    constructor MkRecordField
-    doc : String
-    rig : RigCount
-    piInfo : PiInfo (PTerm' nm)
-    names : List Name -- See #3409
-    type : PTerm' nm
+  RecordField' : Type -> Type
+  RecordField' nm = WithDoc $ WithRig $ WithNames $ PiBindData (PTerm' nm)
 
   public export
   PField : Type
@@ -509,7 +472,7 @@ mutual
 
   public export
   PField' : Type -> Type
-  PField' nm = WithFC (RecordField' nm)
+  PField' nm = AddFC (RecordField' nm)
 
   public export
   0 PRecordDeclLet : Type
@@ -592,11 +555,11 @@ mutual
                     (doc : String) ->
                     (params : List (BasicMultiBinder' nm)) ->
                     (det : Maybe (List1 Name)) ->
-                    (conName : Maybe (String, Name)) ->
+                    (conName : Maybe (WithDoc $ AddFC Name)) ->
                     List (PDecl' nm) ->
                     PDeclNoFC' nm
        PImplementation : Visibility -> List PFnOpt -> Pass ->
-                         (implicits : List (FC, RigCount, Name, PiInfo (PTerm' nm), PTerm' nm)) ->
+                         (implicits : List (AddFC (ImpParameter' (PTerm' nm)))) ->
                          (constraints : List (Maybe Name, PTerm' nm)) ->
                          Name ->
                          (params : List (PTerm' nm)) ->
@@ -639,11 +602,11 @@ mutual
 export
 isStrInterp : PStr -> Maybe FC
 isStrInterp (StrInterp fc _) = Just fc
-isStrInterp (StrLiteral _ _) = Nothing
+isStrInterp (StrLiteral {}) = Nothing
 
 export
 isStrLiteral : PStr -> Maybe (FC, String)
-isStrLiteral (StrInterp _ _) = Nothing
+isStrLiteral (StrInterp {}) = Nothing
 isStrLiteral (StrLiteral fc str) = Just (fc, str)
 
 export
@@ -950,7 +913,7 @@ parameters {0 nm : Type} (toName : nm -> Name)
              else showPTermPrec d f ++ " {" ++ showPrec d n ++ " = " ++ showPrec d (toName a) ++ "}"
   showPTermPrec d (PNamedApp _ f n a)
         = showPTermPrec d f ++ " {" ++ showPrec d n ++ " = " ++ showPTermPrec d a ++ "}"
-  showPTermPrec _ (PSearch _ _) = "%search"
+  showPTermPrec _ (PSearch {}) = "%search"
   showPTermPrec d (PQuote _ tm) = "`(" ++ showPTermPrec d tm ++ ")"
   showPTermPrec d (PQuoteName _ n) = "`{" ++ showPrec d n ++ "}"
   showPTermPrec d (PQuoteDecl _ tm) = "`[ <<declaration>> ]"
@@ -1038,19 +1001,9 @@ covering
 Show IPTerm where
   showPrec = showPTermPrec rawName
 
-public export
-record Method where
-  constructor MkMethod
-  name     : Name
-  count    : RigCount
-  totalReq : Maybe TotalReq
-  type     : RawImp
-
-export
-covering
-Show Method where
-  show (MkMethod n c treq ty)
-    = "[" ++ show treq ++ "] " ++ show c ++ " " ++ show n ++ " : " ++ show ty
+public export 0
+Method : Type
+Method = WithName $ WithRig $ AddMetadata Tot' $ RawImp
 
 public export
 record IFaceInfo where
@@ -1231,8 +1184,8 @@ export
 covering
 Show PClause where
   show (MkPatClause _ lhs rhs []) = unwords [ show lhs, "=", show rhs ]
-  show (MkPatClause _ _ _ _) = "MkPatClause"
-  show (MkWithClause _ _ _ _ _) = "MkWithClause"
+  show (MkPatClause {}) = "MkPatClause"
+  show (MkWithClause {}) = "MkWithClause"
   show (MkImpossible _ lhs) = unwords [ show lhs, "impossible" ]
 
 export
@@ -1246,18 +1199,18 @@ covering
 Show PDeclNoFC where
   show (PClaim pclaim) = show pclaim
   show (PDef cls) = unlines (show <$> cls)
-  show (PData{}) = "PData"
-  show (PParameters{}) = "PParameters"
-  show (PUsing{}) = "PUsing"
-  show (PInterface{}) = "PInterface"
-  show (PImplementation{}) = "PImplementation"
-  show (PRecord{}) = "PRecord"
+  show (PData {}) = "PData"
+  show (PParameters {}) = "PParameters"
+  show (PUsing {}) = "PUsing"
+  show (PInterface {}) = "PInterface"
+  show (PImplementation {}) = "PImplementation"
+  show (PRecord {}) = "PRecord"
   show (PFail mstr ds) = unlines (unwords ("failing" :: maybe [] (pure . show) mstr) :: (show . val <$> ds))
-  show (PMutual{}) = "PMutual"
-  show (PFixity{}) = "PFixity"
-  show (PNamespace{}) = "PNamespace"
-  show (PTransform{}) = "PTransform"
-  show (PRunElabDecl{}) = "PRunElabDecl"
-  show (PDirective{}) = "PDirective"
-  show (PBuiltin{}) = "PBuiltin"
+  show (PMutual {}) = "PMutual"
+  show (PFixity {}) = "PFixity"
+  show (PNamespace {}) = "PNamespace"
+  show (PTransform {}) = "PTransform"
+  show (PRunElabDecl {}) = "PRunElabDecl"
+  show (PDirective {}) = "PDirective"
+  show (PBuiltin {}) = "PBuiltin"
 

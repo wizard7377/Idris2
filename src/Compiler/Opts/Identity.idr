@@ -10,13 +10,8 @@ import Data.Vect
 import Libraries.Data.List.SizeOf
 import Libraries.Data.SnocList.SizeOf
 
--- TODO reduce quadratic weakening
 makeArgs : (args : Scope) -> List (Var (args ++ vars))
-makeArgs args = makeArgs' args id
-  where
-    makeArgs' : (args : Scope) -> (Var (args ++ vars) -> a) -> List a
-    makeArgs' [] f = []
-    makeArgs' (x :: xs) f = f (MkVar First) :: makeArgs' xs (f . weaken)
+makeArgs args = embed @{ListFreelyEmbeddable} (Var.allVars args)
 
 parameters (fn1 : Name) (idIdx : Nat)
   mutual
@@ -24,7 +19,7 @@ parameters (fn1 : Name) (idIdx : Nat)
     isUnsucc : Var vars -> CExp vars -> Maybe (Constant, Var (x :: vars))
     isUnsucc var (COp _ (Sub _) [CLocal _ p, CPrimVal _ c]) =
         if var == MkVar p
-            then Just (c, MkVar First)
+            then Just (c, first)
             else Nothing
     isUnsucc _ _ = Nothing
 
@@ -35,8 +30,8 @@ parameters (fn1 : Name) (idIdx : Nat)
     -- does the CExp evaluate to the var, the constructor or the constant?
     cexpIdentity : Var vars -> Maybe (Name, List (Var vars)) -> Maybe Constant -> CExp vars -> Bool
     cexpIdentity var _ _ (CLocal fc p) = var == MkVar p
-    cexpIdentity var _ _ (CRef _ _) = False
-    cexpIdentity var _ _ (CLam _ _ _) = False
+    cexpIdentity var _ _ (CRef {}) = False
+    cexpIdentity var _ _ (CLam {}) = False
     cexpIdentity var con const (CLet _ _ NotInline val sc) = False
     cexpIdentity var con const (CLet _ _ _ val sc) = (case isUnsucc var val of
         Just (c, var') => unsuccIdentity c var' sc
@@ -51,7 +46,7 @@ parameters (fn1 : Name) (idIdx : Nat)
         case getAt idIdx as of
             Just exp => cexpIdentity var con const exp
             Nothing => False
-    cexpIdentity _ _ _ (CApp _ _ _) = False
+    cexpIdentity _ _ _ (CApp {}) = False
     cexpIdentity var (Just (con1, as1)) const (CCon _ con2 _ _ as2) =
         con1 == con2
         && eqArgs as1 as2
@@ -60,7 +55,7 @@ parameters (fn1 : Name) (idIdx : Nat)
         eqArgs [] [] = True
         eqArgs (v :: vs) (a :: as) = cexpIdentity v Nothing Nothing a && eqArgs vs as
         eqArgs _ _ = False
-    cexpIdentity var Nothing const (CCon _ _ _ _ _) = False
+    cexpIdentity var Nothing const (CCon {}) = False
     -- special case for integerToNat, see unsuccIdentity for a easier to read
     -- version that works when the let hasn't been inlined.
     -- integerToNat : (x : Integer) -> {auto 0 _ : (x >= 0) === True} -> Nat
@@ -77,10 +72,10 @@ parameters (fn1 : Name) (idIdx : Nat)
                     _ => False)
             _ => False
         _ => False
-    cexpIdentity var _ _ (COp _ _ _) = False
-    cexpIdentity var _ _ (CExtPrim _ _ _) = False
-    cexpIdentity var _ _ (CForce _ _ _) = False
-    cexpIdentity var _ _ (CDelay _ _ _) = False
+    cexpIdentity var _ _ (COp {}) = False
+    cexpIdentity var _ _ (CExtPrim {}) = False
+    cexpIdentity var _ _ (CForce {}) = False
+    cexpIdentity var _ _ (CDelay {}) = False
     cexpIdentity var con const (CConCase _ sc xs x) =
         cexpIdentity var Nothing Nothing sc
         && all altEq xs
@@ -102,9 +97,9 @@ parameters (fn1 : Name) (idIdx : Nat)
         altEq : CConstAlt vars -> Bool
         altEq (MkConstAlt c exp) = cexpIdentity var con (Just c) exp
     cexpIdentity _ _ (Just c1) (CPrimVal _ c2) = c1 == c2
-    cexpIdentity _ _ Nothing (CPrimVal _ _) = False
+    cexpIdentity _ _ Nothing (CPrimVal {}) = False
     cexpIdentity _ _ _ (CErased _) = False
-    cexpIdentity _ _ _ (CCrash _ _) = False
+    cexpIdentity _ _ _ (CCrash {}) = False
 
     -- fused `all (cexpIdentity var con const)`
     maybeVarEq : Var vars -> Maybe (Name, List (Var vars)) -> Maybe Constant -> Maybe (CExp vars) -> Bool
@@ -118,7 +113,7 @@ checkIdentity fn (v :: vs) exp idx = if cexpIdentity fn idx v Nothing Nothing ex
     else checkIdentity fn vs exp (S idx)
 
 calcIdentity : (fullName : Name) -> CDef -> Maybe Nat
-calcIdentity fn (MkFun args exp) = checkIdentity fn (makeArgs {vars=Scope.empty} args) (rewrite appendNilRightNeutral args in exp) Z
+calcIdentity fn (MkFun args exp) = checkIdentity fn (Var.allVars args) exp Z
 calcIdentity _ _ = Nothing
 
 getArg : FC -> Nat -> (args : Scope) -> Maybe (CExp args)

@@ -10,27 +10,11 @@ import Idris.Syntax
 
 import Libraries.Data.ANameMap
 import Libraries.Data.NameMap
+import Libraries.Data.NatSet
 import Libraries.Data.SortedMap
 import Libraries.Data.StringMap
 
 %default covering
-
-
-export
-TTC Method where
-  toBuf (MkMethod nm c treq ty)
-      = do toBuf nm
-           toBuf c
-           toBuf treq
-           toBuf ty
-
-  fromBuf
-      = do nm <- fromBuf
-           c <- fromBuf
-           treq <- fromBuf
-           ty <- fromBuf
-           pure (MkMethod nm c treq ty)
-
 
 export
 TTC IFaceInfo where

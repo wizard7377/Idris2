@@ -76,7 +76,7 @@ findTyName defs env n (Bind _ x b@(PVar _ c p ty) sc)
     = if n == x
          then do tynf <- nf defs env ty
                  case tynf of
-                      NTCon _ tyn _ _ _ => pure $ Just tyn
+                      NTCon _ tyn _ _ => pure $ Just tyn
                       _ => pure Nothing
          else findTyName defs (b :: env) n sc
 findTyName defs env n (Bind _ x b sc) = findTyName defs (b :: env) n sc
@@ -103,7 +103,7 @@ findCons n lhs
                       Nothing => pure (SplitFail (CantSplitThis n
                                          ("Can't find type of " ++ show n ++ " in LHS")))
                       Just tyn =>
-                          do Just (TCon _ _ _ _ _ _ cons _) <-
+                          do Just (TCon _ _ _ _ _ cons _) <-
                                       lookupDefExact tyn (gamma defs)
                                 | res => pure (SplitFail
                                             (CantSplitThis n
@@ -113,18 +113,18 @@ findCons n lhs
                                            !(traverse toFullNames $ fromMaybe [] cons)))
 
 findAllVars : Term vars -> List Name
-findAllVars (Bind _ x (PVar _ _ _ _) sc)
+findAllVars (Bind _ x (PVar {}) sc)
     = x :: findAllVars sc
-findAllVars (Bind _ x (Let _ _ _ _) sc)
+findAllVars (Bind _ x (Let {}) sc)
     = x :: findAllVars sc
-findAllVars (Bind _ x (PLet _ _ _ _) sc)
+findAllVars (Bind _ x (PLet {}) sc)
     = x :: findAllVars sc
 -- #2640 also grab the name of the function being defined
 findAllVars t = toList (dropNS <$> getDefining t)
 
 export
 explicitlyBound : Defs -> ClosedNF -> Core (List Name)
-explicitlyBound defs (NBind fc x (Pi _ _ _ _) sc)
+explicitlyBound defs (NBind fc x (Pi {}) sc)
     = pure $ x :: !(explicitlyBound defs
                     !(sc defs (toClosure defaultOpts Env.empty (Erased fc Placeholder))))
 explicitlyBound defs _ = pure []
@@ -144,7 +144,7 @@ expandCon fc usedvars con
          Just ty <- lookupTyExact con (gamma defs)
               | Nothing => undefinedName fc con
          pure (apply (IVar fc con)
-                (map (IBindVar fc)
+                (map (IBindVar fc . UN . Basic)
                      !(getArgNames defs [] usedvars Env.empty
                                    !(nf defs Env.empty ty))))
 

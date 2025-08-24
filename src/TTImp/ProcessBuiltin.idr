@@ -1,8 +1,9 @@
 ||| Checking a %builtin pragma is correct.
--- If we get more builtins it might be wise to move each builtin to it's own file.
+-- If we get more builtins it might be wise to move each builtin to its own file.
 module TTImp.ProcessBuiltin
 
 import Data.List
+import Libraries.Data.NatSet
 
 import Core.Core
 import Core.Context
@@ -34,7 +35,7 @@ showDefType Delayed = "delayed"
 getReturnType : {vars : _} -> Term vars -> Maybe (vars ** Term vars)
 getReturnType tm@(Bind _ x b scope) = case b of
     Let _ _ val _ => getReturnType $ subst {x} val scope
-    Pi _ _ _ _ => getReturnType scope
+    Pi {} => getReturnType scope
     _ => Nothing
 getReturnType tm = Just (vars ** tm)
 
@@ -114,25 +115,25 @@ termConMatch tm0 (TDelayed _ _ tm1) = termConMatch tm0 tm1
 termConMatch (TDelay _ _ tm0 x0) (TDelay _ _ tm1 x1) = termConMatch tm0 tm1 && termConMatch x0 x1
 termConMatch (TForce _ _ tm0) tm1 = termConMatch tm0 tm1
 termConMatch tm0 (TForce _ _ tm1) = termConMatch tm0 tm1
-termConMatch (PrimVal _ _) (PrimVal _ _) = True -- no constructor to check.
-termConMatch (Erased _ _) (Erased _ _) = True -- return type can't erased?
-termConMatch (TType _ _) (TType _ _) = True
+termConMatch (PrimVal {}) (PrimVal {}) = True -- no constructor to check.
+termConMatch (Erased {}) (Erased {}) = True -- return type can't erased?
+termConMatch (TType {}) (TType {}) = True
 termConMatch _ _ = False
 
 ||| Check a type is strict.
 isStrict : Term vs -> Bool
-isStrict (Local _ _ _ _) = True
-isStrict (Ref _ _ _) = True
+isStrict (Local {}) = True
+isStrict (Ref {}) = True
 isStrict (Meta _ _ i args) = all isStrict args
 isStrict (Bind _ _ b s) = isStrict (binderType b) && isStrict s
 isStrict (App _ f x) = isStrict f && isStrict x
 isStrict (As _ _ a p) = isStrict a && isStrict p
-isStrict (TDelayed _ _ _) = False
+isStrict (TDelayed {}) = False
 isStrict (TDelay _ _ f x) = isStrict f && isStrict x
 isStrict (TForce _ _ tm) = isStrict tm
-isStrict (PrimVal _ _) = True
-isStrict (Erased _ _) = True
-isStrict (TType _ _) = True
+isStrict (PrimVal {}) = True
+isStrict (Erased {}) = True
+isStrict (TType {}) = True
 
 ||| Get the name and definition of a list of names.
 getConsGDef :
@@ -152,7 +153,7 @@ isNatural fc n = do
     defs <- get Ctxt
     Just gdef <- lookupCtxtExact n defs.gamma
         | Nothing => undefinedName EmptyFC n
-    let TCon _ _ _ _ _ _ cons _ = gdef.definition
+    let TCon _ _ _ _ _ cons _ = gdef.definition
         | _ => pure False
     consDefs <- getConsGDef fc (fromMaybe [] cons)
     pure $ all hasNatFlag consDefs
@@ -200,7 +201,7 @@ checkNatCons c cons ty fc = case !(foldr checkCon (pure (Nothing, Nothing)) cons
         (zero, succ) <- cons
         let DCon _ arity _ = gdef.definition
             | def => throw $ GenericMsg fc $ "Expected data constructor, found:" ++ showDefType def
-        case arity `minus` length gdef.eraseArgs of
+        case arity `minus` size gdef.eraseArgs of
             0 => case zero of
                 Just _ => throw $ GenericMsg fc $ "Multiple 'Z'-like constructors for " ++ show ty ++ "."
                 Nothing => pure (Just n, succ)
@@ -222,7 +223,7 @@ processBuiltinNatural fc name = do
         | ns => ambiguousName fc name $ (\(n, _, _) => n) <$> ns
     False <- isNatural fc n
         | True => pure ()
-    let TCon _ _ _ _ _ _ dcons _ = gdef.definition
+    let TCon _ _ _ _ _ dcons _ = gdef.definition
         | def => throw $ GenericMsg fc
             $ "Expected a type constructor, found " ++ showDefType def ++ "."
     cons <- getConsGDef fc (fromMaybe [] dcons)

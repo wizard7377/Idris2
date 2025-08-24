@@ -78,14 +78,14 @@ lookup fc (MkVar p) rho = case go p rho of
   go p         (Wk ws  rho) = case sizedView ws of
     Z => go p rho
     S ws' => case i of
-      Z => Left (MkVar First)
+      Z => Left first
       S i' => bimap later weaken (go (dropLater p) (Wk ws' rho))
 
 replace : CExp vars -> Bool
-replace (CLocal _ _)   = True
-replace (CPrimVal _ _) = True
-replace (CErased _)    = True
-replace _              = False
+replace (CLocal {})   = True
+replace (CPrimVal {}) = True
+replace (CErased {})  = True
+replace _             = False
 
 -- constant folding of primitive functions
 -- if a primitive function is applied to only constant
@@ -150,11 +150,11 @@ constFold rho (COp {arity} fc fn xs) =
 
     constRight : {ar : _} -> FC -> PrimFn ar ->
                  Vect ar (CExp vars') -> CExp vars'
-    constRight fc (Add ty) [x@(CPrimVal _ _), y] =
+    constRight fc (Add ty) [x@(CPrimVal {}), y] =
         if commutative ty
             then COp fc (Add ty) [y, x]
             else COp fc (Add ty) [x, y]
-    constRight fc (Mul ty) [x@(CPrimVal _ _), y] =
+    constRight fc (Mul ty) [x@(CPrimVal {}), y] =
         if commutative ty
             then COp fc (Mul ty) [y, x]
             else COp fc (Mul ty) [x, y]

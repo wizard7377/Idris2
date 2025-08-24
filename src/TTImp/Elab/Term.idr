@@ -71,8 +71,8 @@ insertImpLam {vars} env tm (Just ty) = bindLam tm ty
     bindLamTm tm exp
         = case getFn exp of
                Ref _ Func _ => pure Nothing -- might still be implicit
-               TForce _ _ _ => pure Nothing
-               Bind _ _ (Lam _ _ _ _) _ => pure Nothing
+               TForce {} => pure Nothing
+               Bind _ _ (Lam {}) _ => pure Nothing
                _ => pure $ Just tm
 
     bindLamNF : RawImp -> NF vars -> Core RawImp
@@ -185,7 +185,7 @@ checkTerm rig elabinfo nest env (ICoerced fc tm) exp
 checkTerm rig elabinfo nest env (IBindHere fc binder sc) exp
     = checkBindHere rig elabinfo nest env fc binder sc exp
 checkTerm rig elabinfo nest env (IBindVar fc n) exp
-    = checkBindVar rig elabinfo nest env fc (Basic n) exp
+    = checkBindVar rig elabinfo nest env fc n exp
 checkTerm rig elabinfo nest env (IAs fc nameFC side n_in tm) exp
     = checkAs rig elabinfo nest env fc nameFC side n_in tm exp
 checkTerm rig elabinfo nest env (IMustUnify fc reason tm) exp
@@ -265,7 +265,7 @@ checkTerm rig elabinfo nest env (IWithUnambigNames fc ns rhs) exp
           case rns of
             [rn@(_, _, def)] =>
                 do whenJust (isConcreteFC nfc) $ \nfc => do
-                     let nt = fromMaybe Func (defNameType $ definition def)
+                     let nt = getDefNameType def
                      let decor = nameDecoration def.fullname nt
                      log "ide-mode.highlight" 7
                        $ "`with' unambiguous name is adding " ++ show decor ++ ": " ++ show def.fullname
@@ -290,11 +290,11 @@ checkTerm rig elabinfo nest env (IWithUnambigNames fc ns rhs) exp
 TTImp.Elab.Check.check rigc elabinfo nest env (ICoerced fc tm) exp
     = checkImp rigc elabinfo nest env tm exp
 -- Don't add implicits/coercions on local blocks or record updates
-TTImp.Elab.Check.check rigc elabinfo nest env tm@(ILet _ _ _ _ _ _ _) exp
+TTImp.Elab.Check.check rigc elabinfo nest env tm@(ILet {}) exp
     = checkImp rigc elabinfo nest env tm exp
-TTImp.Elab.Check.check rigc elabinfo nest env tm@(ILocal _ _ _) exp
+TTImp.Elab.Check.check rigc elabinfo nest env tm@(ILocal {}) exp
     = checkImp rigc elabinfo nest env tm exp
-TTImp.Elab.Check.check rigc elabinfo nest env tm@(IUpdate _ _ _) exp
+TTImp.Elab.Check.check rigc elabinfo nest env tm@(IUpdate {}) exp
     = checkImp rigc elabinfo nest env tm exp
 TTImp.Elab.Check.check rigc elabinfo nest env tm_in exp
     = do tm <- expandAmbigName (elabMode elabinfo) nest env tm_in [] tm_in exp
@@ -305,7 +305,7 @@ TTImp.Elab.Check.check rigc elabinfo nest env tm_in exp
                       checkImp rigc elabinfo nest env tm' exp
 
 onLHS : ElabMode -> Bool
-onLHS (InLHS _) = True
+onLHS (InLHS {}) = True
 onLHS _ = False
 
 -- As above, but doesn't add any implicit lambdas, forces, delays, etc

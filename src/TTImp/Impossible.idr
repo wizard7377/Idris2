@@ -29,14 +29,14 @@ match nty (n, i, rty)
          sameRet nty rtynf
   where
     sameRet : ClosedNF -> ClosedNF -> Core Bool
-    sameRet _ (NApp _ _ _) = pure True
-    sameRet _ (NErased _ _) = pure True
-    sameRet (NApp _ _ _) _ = pure True
-    sameRet (NErased _ _) _ = pure True
-    sameRet (NTCon _ n _ _ _) (NTCon _ n' _ _ _) = pure (n == n')
+    sameRet _ (NApp {}) = pure True
+    sameRet _ (NErased {}) = pure True
+    sameRet (NApp {}) _ = pure True
+    sameRet (NErased {}) _ = pure True
+    sameRet (NTCon _ n _ _) (NTCon _ n' _ _) = pure (n == n')
     sameRet (NPrimVal _ c) (NPrimVal _ c') = pure (c == c')
-    sameRet (NType _ _) (NType _ _) = pure True
-    sameRet nf (NBind fc _ (Pi _ _ _ _) sc)
+    sameRet (NType {}) (NType {}) = pure True
+    sameRet nf (NBind fc _ (Pi {}) sc)
         = do defs <- get Ctxt
              sc' <- sc defs (toClosure defaultOpts Env.empty (Erased fc Placeholder))
              sameRet nf sc'
@@ -141,11 +141,7 @@ mutual
            -- When `head` is `Func`, the pattern will be marked as forced and
            -- the coverage checker will considers that all the cases have been
            -- covered!
-           let head = case definition gdef of
-                        DCon t a _ => DataCon t a
-                        TCon t a _ _ _ _ _ _ => TyCon t a
-                        _ => Func
-           processArgs (Ref fc head (Resolved i)) tynf exps autos named
+           processArgs (Ref fc (getDefNameType gdef) (Resolved i)) tynf exps autos named
 
   mkTerm : {auto c : Ref Ctxt Defs} ->
            {auto q : Ref QVar Int} ->

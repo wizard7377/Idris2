@@ -50,7 +50,7 @@ mutual
   mismatchNF : {auto c : Ref Ctxt Defs} ->
                {vars : _} ->
                Defs -> NF vars -> NF vars -> Core Bool
-  mismatchNF defs (NTCon _ xn xt _ xargs) (NTCon _ yn yt _ yargs)
+  mismatchNF defs (NTCon _ xn _ xargs) (NTCon _ yn _ yargs)
       = if xn /= yn
            then pure True
            else anyM (mismatch defs) (zipWith (curry $ mapHom snd) xargs yargs)
@@ -64,24 +64,24 @@ mutual
       = mismatchNF defs !(evalClosure defs x) !(evalClosure defs y)
 
   -- NPrimVal is apart from NDCon, NTCon, NBind, and NType
-  mismatchNF defs (NPrimVal _ _) (NDCon _ _ _ _ _) = pure True
-  mismatchNF defs (NDCon _ _ _ _ _) (NPrimVal _ _) = pure True
-  mismatchNF defs (NPrimVal _ _) (NBind _ _ _ _) = pure True
-  mismatchNF defs (NBind _ _ _ _) (NPrimVal _ _) = pure True
-  mismatchNF defs (NPrimVal _ _) (NTCon _ _ _ _ _) = pure True
-  mismatchNF defs (NTCon _ _ _ _ _) (NPrimVal _ _) = pure True
-  mismatchNF defs (NPrimVal _ _) (NType _ _) = pure True
-  mismatchNF defs (NType _ _) (NPrimVal _ _) = pure True
+  mismatchNF defs (NPrimVal {}) (NDCon {}) = pure True
+  mismatchNF defs (NDCon {}) (NPrimVal {}) = pure True
+  mismatchNF defs (NPrimVal {}) (NBind {}) = pure True
+  mismatchNF defs (NBind {}) (NPrimVal {}) = pure True
+  mismatchNF defs (NPrimVal {}) (NTCon {}) = pure True
+  mismatchNF defs (NTCon {}) (NPrimVal {}) = pure True
+  mismatchNF defs (NPrimVal {}) (NType {}) = pure True
+  mismatchNF defs (NType {}) (NPrimVal {}) = pure True
 
 -- NTCon is apart from NBind, and NType
-  mismatchNF defs (NTCon _ _ _ _ _) (NBind _ _ _ _) = pure True
-  mismatchNF defs (NBind _ _ _ _) (NTCon _ _ _ _ _) = pure True
-  mismatchNF defs (NTCon _ _ _ _ _) (NType _ _) = pure True
-  mismatchNF defs (NType _ _) (NTCon _ _ _ _ _) = pure True
+  mismatchNF defs (NTCon {}) (NBind {}) = pure True
+  mismatchNF defs (NBind {}) (NTCon {}) = pure True
+  mismatchNF defs (NTCon {}) (NType {}) = pure True
+  mismatchNF defs (NType {}) (NTCon {}) = pure True
 
 -- NBind is apart from NType
-  mismatchNF defs (NBind _ _ _ _) (NType _ _) = pure True
-  mismatchNF defs (NType _ _) (NBind _ _ _ _) = pure True
+  mismatchNF defs (NBind {}) (NType {}) = pure True
+  mismatchNF defs (NType {}) (NBind {}) = pure True
 
   mismatchNF _ _ _ = pure False
 
@@ -98,7 +98,7 @@ export
 impossibleOK : {auto c : Ref Ctxt Defs} ->
                {vars : _} ->
                Defs -> NF vars -> NF vars -> Core Bool
-impossibleOK defs (NTCon _ xn xt xa xargs) (NTCon _ yn yt ya yargs)
+impossibleOK defs (NTCon _ xn xa xargs) (NTCon _ yn ya yargs)
     = if xn /= yn
          then pure True
          else anyM (mismatch defs) (zipWith (curry $ mapHom snd) xargs yargs)
@@ -110,24 +110,24 @@ impossibleOK defs (NDCon _ _ xt _ xargs) (NDCon _ _ yt _ yargs)
 impossibleOK defs (NPrimVal _ x) (NPrimVal _ y) = pure (x /= y)
 
 -- NPrimVal is apart from NDCon, NTCon, NBind, and NType
-impossibleOK defs (NPrimVal _ _) (NDCon _ _ _ _ _) = pure True
-impossibleOK defs (NDCon _ _ _ _ _) (NPrimVal _ _) = pure True
-impossibleOK defs (NPrimVal _ _) (NBind _ _ _ _) = pure True
-impossibleOK defs (NBind _ _ _ _) (NPrimVal _ _) = pure True
-impossibleOK defs (NPrimVal _ _) (NTCon _ _ _ _ _) = pure True
-impossibleOK defs (NTCon _ _ _ _ _) (NPrimVal _ _) = pure True
-impossibleOK defs (NPrimVal _ _) (NType _ _) = pure True
-impossibleOK defs (NType _ _) (NPrimVal _ _) = pure True
+impossibleOK defs (NPrimVal {}) (NDCon {}) = pure True
+impossibleOK defs (NDCon {}) (NPrimVal {}) = pure True
+impossibleOK defs (NPrimVal {}) (NBind {}) = pure True
+impossibleOK defs (NBind {}) (NPrimVal {}) = pure True
+impossibleOK defs (NPrimVal {}) (NTCon {}) = pure True
+impossibleOK defs (NTCon {}) (NPrimVal {}) = pure True
+impossibleOK defs (NPrimVal {}) (NType {}) = pure True
+impossibleOK defs (NType {}) (NPrimVal {}) = pure True
 
 -- NTCon is apart from NBind, and NType
-impossibleOK defs (NTCon _ _ _ _ _) (NBind _ _ _ _) = pure True
-impossibleOK defs (NBind _ _ _ _) (NTCon _ _ _ _ _) = pure True
-impossibleOK defs (NTCon _ _ _ _ _) (NType _ _) = pure True
-impossibleOK defs (NType _ _) (NTCon _ _ _ _ _) = pure True
+impossibleOK defs (NTCon {}) (NBind {}) = pure True
+impossibleOK defs (NBind {}) (NTCon {}) = pure True
+impossibleOK defs (NTCon {}) (NType {}) = pure True
+impossibleOK defs (NType {}) (NTCon {}) = pure True
 
 -- NBind is apart from NType
-impossibleOK defs (NBind _ _ _ _) (NType _ _) = pure True
-impossibleOK defs (NType _ _) (NBind _ _ _ _) = pure True
+impossibleOK defs (NBind {}) (NType {}) = pure True
+impossibleOK defs (NType {}) (NBind {}) = pure True
 
 impossibleOK defs x y = pure False
 
@@ -143,7 +143,7 @@ impossibleErrOK defs (CantSolveEq fc gam env l r)
          impossibleOK defs !(nf defs env l)
                            !(nf defs env r)
 impossibleErrOK defs (BadDotPattern _ _ ErasedArg _ _) = pure True
-impossibleErrOK defs (CyclicMeta _ _ _ _) = pure True
+impossibleErrOK defs (CyclicMeta {}) = pure True
 impossibleErrOK defs (AllFailed errs)
     = anyM (impossibleErrOK defs) (map snd errs)
 impossibleErrOK defs (WhenUnifying _ _ _ _ _ err)
@@ -160,22 +160,22 @@ recoverable : {auto c : Ref Ctxt Defs} ->
 -- Unlike the above, any mismatch will do
 
 -- TYPE CONSTRUCTORS
-recoverable defs (NTCon _ xn xt xa xargs) (NTCon _ yn yt ya yargs)
+recoverable defs (NTCon _ xn xa xargs) (NTCon _ yn ya yargs)
     = if xn /= yn
          then pure False
          else pure $ not !(anyM (mismatch defs) (zipWith (curry $ mapHom snd) xargs yargs))
 -- Type constructor vs. primitive type
-recoverable defs (NTCon _ _ _ _ _) (NPrimVal _ _) = pure False
-recoverable defs (NPrimVal _ _) (NTCon _ _ _ _ _) = pure False
+recoverable defs (NTCon {}) (NPrimVal {}) = pure False
+recoverable defs (NPrimVal {}) (NTCon {}) = pure False
 -- Type constructor vs. type
-recoverable defs (NTCon _ _ _ _ _) (NType _ _) = pure False
-recoverable defs (NType _ _) (NTCon _ _ _ _ _) = pure False
+recoverable defs (NTCon {}) (NType {}) = pure False
+recoverable defs (NType {}) (NTCon {}) = pure False
 -- Type constructor vs. binder
-recoverable defs (NTCon _ _ _ _ _) (NBind _ _ _ _) = pure False
-recoverable defs (NBind _ _ _ _) (NTCon _ _ _ _ _) = pure False
+recoverable defs (NTCon {}) (NBind {}) = pure False
+recoverable defs (NBind {}) (NTCon {}) = pure False
 
-recoverable defs (NTCon _ _ _ _ _) _ = pure True
-recoverable defs _ (NTCon _ _ _ _ _) = pure True
+recoverable defs (NTCon {}) _ = pure True
+recoverable defs _ (NTCon {}) = pure True
 
 -- DATA CONSTRUCTORS
 recoverable defs (NDCon _ _ xt _ xargs) (NDCon _ _ yt _ yargs)
@@ -183,11 +183,11 @@ recoverable defs (NDCon _ _ xt _ xargs) (NDCon _ _ yt _ yargs)
          then pure False
          else pure $ not !(anyM (mismatch defs) (zipWith (curry $ mapHom snd) xargs yargs))
 -- Data constructor vs. primitive constant
-recoverable defs (NDCon _ _ _ _ _) (NPrimVal _ _) = pure False
-recoverable defs (NPrimVal _ _) (NDCon _ _ _ _ _) = pure False
+recoverable defs (NDCon {}) (NPrimVal {}) = pure False
+recoverable defs (NPrimVal {}) (NDCon {}) = pure False
 
-recoverable defs (NDCon _ _ _ _ _) _ = pure True
-recoverable defs _ (NDCon _ _ _ _ _) = pure True
+recoverable defs (NDCon {}) _ = pure True
+recoverable defs _ (NDCon {}) = pure True
 
 -- FUNCTION CALLS
 recoverable defs (NApp _ (NRef _ f) fargs) (NApp _ (NRef _ g) gargs)
@@ -196,8 +196,8 @@ recoverable defs (NApp _ (NRef _ f) fargs) (NApp _ (NRef _ g) gargs)
 -- PRIMITIVES
 recoverable defs (NPrimVal _ x) (NPrimVal _ y) = pure (x == y)
 -- primitive vs. binder
-recoverable defs (NPrimVal _ _) (NBind _ _ _ _) = pure False
-recoverable defs (NBind _ _ _ _) (NPrimVal _ _) = pure False
+recoverable defs (NPrimVal {}) (NBind {}) = pure False
+recoverable defs (NBind {}) (NPrimVal {}) = pure False
 
 -- OTHERWISE: no
 recoverable defs x y = pure False
@@ -222,9 +222,9 @@ recoverableErr defs (CantSolveEq fc gam env l r)
        recoverable defs !(nf defs env l)
                         !(nf defs env r)
 recoverableErr defs (BadDotPattern _ _ ErasedArg _ _) = pure True
-recoverableErr defs (CyclicMeta _ _ _ _) = pure False
+recoverableErr defs (CyclicMeta {}) = pure False
 -- Don't mark a case as impossible because we can't see the constructor.
-recoverableErr defs (InvisibleName _ _ _) = pure True
+recoverableErr defs (InvisibleName {}) = pure True
 recoverableErr defs (AllFailed errs)
     = anyM (recoverableErr defs) (map snd errs)
 recoverableErr defs (WhenUnifying _ _ _ _ _ err)
@@ -245,16 +245,16 @@ extendEnv : {vars : _} ->
                     (Thin inner vars',
                      Env Term vars', NestedNames vars',
                      Term vars', Term vars'))
-extendEnv env p nest (Bind _ n (PVar fc c pi tmty) sc) (Bind _ n' (PVTy _ _ _) tysc) with (nameEq n n')
-  extendEnv env p nest (Bind _ n (PVar fc c pi tmty) sc) (Bind _ n' (PVTy _ _ _) tysc) | Nothing
+extendEnv env p nest (Bind _ n (PVar fc c pi tmty) sc) (Bind _ n' (PVTy {}) tysc) with (nameEq n n')
+  extendEnv env p nest (Bind _ n (PVar fc c pi tmty) sc) (Bind _ n' (PVTy {}) tysc) | Nothing
       = throw (InternalError "Can't happen: names don't match in pattern type")
-  extendEnv env p nest (Bind _ n (PVar fc c pi tmty) sc) (Bind _ n (PVTy _ _ _) tysc) | (Just Refl)
+  extendEnv env p nest (Bind _ n (PVar fc c pi tmty) sc) (Bind _ n (PVTy {}) tysc) | (Just Refl)
       = extendEnv (PVar fc c pi tmty :: env) (Drop p) (weaken nest) sc tysc
-extendEnv env p nest (Bind _ n (PLet fc c tmval tmty) sc) (Bind _ n' (PLet _ _ _ _) tysc) with (nameEq n n')
-  extendEnv env p nest (Bind _ n (PLet fc c tmval tmty) sc) (Bind _ n' (PLet _ _ _ _) tysc) | Nothing
+extendEnv env p nest (Bind _ n (PLet fc c tmval tmty) sc) (Bind _ n' (PLet {}) tysc) with (nameEq n n')
+  extendEnv env p nest (Bind _ n (PLet fc c tmval tmty) sc) (Bind _ n' (PLet {}) tysc) | Nothing
       = throw (InternalError "Can't happen: names don't match in pattern type")
   -- PLet on the left becomes Let on the right, to give it computational force
-  extendEnv env p nest (Bind _ n (PLet fc c tmval tmty) sc) (Bind _ n (PLet _ _ _ _) tysc) | (Just Refl)
+  extendEnv env p nest (Bind _ n (PLet fc c tmval tmty) sc) (Bind _ n (PLet {}) tysc) | (Just Refl)
       = extendEnv (Let fc c tmval tmty :: env) (Drop p) (weaken nest) sc tysc
 extendEnv env p nest tm ty
       = pure (_ ** (p, env, nest, tm, ty))
@@ -314,11 +314,11 @@ findLinear top bound rig tm
       findLinArg _ _ [] = pure []
 
 setLinear : List (Name, RigCount) -> Term vars -> Term vars
-setLinear vs (Bind fc x b@(PVar _ _ _ _) sc)
+setLinear vs (Bind fc x b@(PVar {}) sc)
     = case lookup x vs of
            Just c' => Bind fc x (setMultiplicity b c') (setLinear vs sc)
            _ => Bind fc x b (setLinear vs sc)
-setLinear vs (Bind fc x b@(PVTy _ _ _) sc)
+setLinear vs (Bind fc x b@(PVTy {}) sc)
     = case lookup x vs of
            Just c' => Bind fc x (setMultiplicity b c') (setLinear vs sc)
            _ => Bind fc x b (setLinear vs sc)
@@ -489,7 +489,7 @@ checkClause mult vis totreq hashit n opts nest env (ImpossibleClause fc lhs)
                   else throw (ValidCase fc env (Left lhs)))
            (\err =>
               case err of
-                   ValidCase _ _ _ => throw err
+                   ValidCase {} => throw err
                    _ => do defs <- get Ctxt
                            if !(impossibleErrOK defs err)
                               then pure (Left lhs_raw)
@@ -515,7 +515,7 @@ checkClause {vars} mult vis totreq hashit n opts nest env (PatClause fc lhs_in r
          -- If the rhs is a hole, record the lhs in the metadata because we
          -- might want to split it interactively
          case rhstm of
-              Meta _ _ _ _ =>
+              Meta {} =>
                  addLHS (getFC lhs_in) (length env) env' lhstm'
               _ => pure ()
 
@@ -658,9 +658,9 @@ checkClause {vars} mult vis totreq hashit n opts nest env
       defs <- get Ctxt
 
       let eqName = NS builtinNS (UN $ Basic "Equal")
-      Just (TCon t ar _ _ _ _ _ _) <- lookupDefExact eqName (gamma defs)
+      Just (TCon ar _ _ _ _ _ _) <- lookupDefExact eqName (gamma defs)
         | _ => throw (InternalError "Cannot find builtin Equal")
-      let eqTyCon = Ref vfc (TyCon t ar) !(toResolvedNames eqName)
+      let eqTyCon = Ref vfc (TyCon ar) !(toResolvedNames eqName)
 
       let wargn : Name
           wargn = MN "warg" 0
@@ -831,7 +831,7 @@ mkRunTime fc n
     noInline _ = True
 
     caseName : Name -> Bool
-    caseName (CaseBlock _ _) = True
+    caseName (CaseBlock {}) = True
     caseName (NS _ n) = caseName n
     caseName _ = False
 
@@ -897,8 +897,8 @@ warnUnreachable : {auto c : Ref Ctxt Defs} ->
 warnUnreachable (MkClause env lhs rhs)
     = recordWarning (UnreachableClause (getLoc lhs) env lhs)
 
-isAlias : RawImp -> Maybe ((FC, Name)                -- head symbol
-                          , List (FC, (FC, String))) -- pattern variables
+isAlias : RawImp -> Maybe ((FC, Name)              -- head symbol
+                          , List (FC, (FC, Name))) -- pattern variables
 isAlias lhs
   = do let (hd, apps) = getFnArgs lhs []
        hd <- isIVar hd
@@ -943,16 +943,16 @@ lookupOrAddAlias eopts nest env fc n [cl@(PatClause _ lhs _)]
        log "declare.def" 5 "Not a misspelling: go ahead and declare it!"
        processType eopts nest env fc top Public []
           -- See #3409
-          $ MkImpTy fc (MkFCVal fc n) $ holeyType (map snd args)
+          $ Mk [fc, MkFCVal fc n] $ holeyType (map snd args)
        defs <- get Ctxt
        lookupCtxtExact n (gamma defs)
 
   where
-    holeyType : List (FC, String) -> RawImp
+    holeyType : List (FC, Name) -> RawImp
     holeyType [] = Implicit fc False
     holeyType ((xfc, x) :: xs)
       = let xfc = virtualiseFC xfc in
-        IPi xfc top Explicit (Just (UN $ Basic x)) (Implicit xfc False)
+        IPi xfc top Explicit (Just x) (Implicit xfc False)
       $ holeyType xs
 
 lookupOrAddAlias _ _ _ fc n _
@@ -1063,8 +1063,8 @@ processDef opts nest env fc n_in cs_in
 
 
     simplePat : forall vars . Term vars -> Bool
-    simplePat (Local _ _ _ _) = True
-    simplePat (Erased _ _) = True
+    simplePat (Local {}) = True
+    simplePat (Erased {}) = True
     simplePat (As _ _ _ p) = simplePat p
     simplePat _ = False
 
@@ -1111,7 +1111,7 @@ processDef opts nest env fc n_in cs_in
                               else pure (Just tm))
       where
         closeEnv : Defs -> ClosedNF -> Core ClosedTerm
-        closeEnv defs (NBind _ x (PVar _ _ _ _) sc)
+        closeEnv defs (NBind _ x (PVar {}) sc)
             = closeEnv defs !(sc defs (toClosure defaultOpts Env.empty (Ref fc Bound x)))
         closeEnv defs nf = quote defs Env.empty nf
 

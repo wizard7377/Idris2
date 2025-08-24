@@ -51,12 +51,12 @@ namePis i (IBindHere fc m ty) = IBindHere fc m (namePis i ty)
 namePis i ty = ty
 
 getSig : ImpDecl -> Maybe Signature
-getSig (IClaim (MkWithData _ $ MkIClaimData c _ opts (MkImpTy fc n ty)))
+getSig (IClaim (MkWithData _ $ MkIClaimData c _ opts ty))
     = Just $ MkSignature { count    = c
                          , flags    = opts
-                         , name     = n
+                         , name     = ty.tyName
                          , isData   = False
-                         , type     = namePis 0 ty
+                         , type     = namePis 0 ty.val
                          }
 getSig (IData _ _ _ (MkImpLater fc n ty))
     = Just $ MkSignature { count    = erased
@@ -66,26 +66,6 @@ getSig (IData _ _ _ (MkImpLater fc n ty))
                          , type     = namePis 0 ty
                          }
 getSig _ = Nothing
-
-------------------------------------------------------------------------
--- Declaration
-
-record Declaration where
-  constructor MkDeclaration
-  name   : Name
-  count  : RigCount
-  flags  : List FnOpt
-  isData : Bool
-  type   : RawImp
-
-sigToDecl : Signature -> Declaration
-sigToDecl sig = MkDeclaration
-  { name = sig.name.val
-  , count = sig.count
-  , flags = sig.flags
-  , isData = sig.isData
-  , type = sig.type
-  }
 
 ------------------------------------------------------------------------
 
@@ -121,7 +101,7 @@ mkIfaceData {vars} ifc def_vis env constraints n conName ps dets meths
           conty = mkTy vfc Implicit (map jname ps) $
                   mkTy vfc AutoImplicit (map bhere constraints) $
                   mkTy vfc Explicit (map bname meths) retty
-          con = MkImpTy vfc (NoFC conName) !(bindTypeNames ifc [] (pNames ++ map fst meths ++ toList vars) conty)
+          con = Mk [vfc, NoFC conName] !(bindTypeNames ifc [] (pNames ++ map fst meths ++ toList vars) conty)
           bound = pNames ++ map fst meths ++ toList vars in
 
           pure $ IData vfc def_vis Nothing {- ?? -}
@@ -174,10 +154,11 @@ getMethToplevel : {vars : _} ->
                   Name -> Name ->
                   (constraints : List (Maybe Name)) ->
                   (allmeths : List Name) ->
+                  (bindNames : List Name) ->
                   (params : List (Name, (RigCount, RawImp))) ->
-                  Signature ->
+                  (Name, Signature) ->
                   Core (List ImpDecl)
-getMethToplevel {vars} env vis iname cname constraints allmeths params sig
+getMethToplevel {vars} env vis iname cname constraints allmeths bindNames params (mname, sig)
     = do let paramNames = map fst params
          let ity = apply (IVar vfc iname) (map (IVar EmptyFC) paramNames)
          -- Make the constraint application explicit for any method names
@@ -188,9 +169,8 @@ getMethToplevel {vars} env vis iname cname constraints allmeths params sig
          cn <- traverse inCurrentNS sig.name
          let tydecl = IClaim (MkFCVal vfc $ MkIClaimData sig.count vis (if sig.isData then [Inline, Invertible]
                                             else [Inline])
-                                      (MkImpTy vfc cn ty_imp))
-         let conapp = apply (IVar vfc cname)
-                            (map (IBindVar EmptyFC) (map bindName allmeths))
+                                      (Mk [vfc, cn] ty_imp))
+         let conapp = apply (IVar vfc cname) (map (IBindVar EmptyFC) bindNames)
          let argns = getExplicitArgs 0 sig.type
          -- eta expand the RHS so that we put implicits in the right place
          let fnclause = PatClause vfc
@@ -200,7 +180,7 @@ getMethToplevel {vars} env vis iname cname constraints allmeths params sig
                                              conapp
                                              )
                                   (mkLam argns
-                                    (apply (IVar EmptyFC (methName sig.name.val))
+                                    (apply (IVar EmptyFC mname)
                                            (map (IVar EmptyFC) argns)))
          let fndef = IDef vfc cn.val [fnclause]
          pure [tydecl, fndef]
@@ -230,14 +210,6 @@ getMethToplevel {vars} env vis iname cname constraints allmeths params sig
     mkLam (x :: xs) tm
        = ILam EmptyFC top Explicit (Just x) (Implicit vfc False) (mkLam xs tm)
 
-    bindName : Name -> String
-    bindName (UN n) = "__bind_" ++ displayUserName n
-    bindName (NS _ n) = bindName n
-    bindName n = show n
-
-    methName : Name -> Name
-    methName n = UN (Basic $ bindName n)
-
 -- Get the function for chasing a constraint. This is one of the
 -- arguments to the record, appearing before the method arguments.
 getConstraintHint : {vars : _} ->
@@ -255,28 +227,21 @@ getConstraintHint {vars} fc env vis iname cname constraints meths params (cn, co
                    mkTy fc Explicit [(Nothing, top, ity)] con
          ty_imp <- bindTypeNames fc [] (pNames ++ meths ++ toList vars) fty
          let hintname = DN ("Constraint " ++ show con)
-                          (UN (Basic $ "__" ++ show iname ++ "_" ++ show con))
+                           (UN (Basic $ "__" ++ show iname ++ "_" ++ show con))
 
          let tydecl = IClaim (MkFCVal fc $ MkIClaimData top vis [Inline, Hint False]
-                          (MkImpTy EmptyFC (NoFC hintname) ty_imp))
+                             (Mk [EmptyFC, NoFC hintname] ty_imp))
 
-         let conapp = apply (impsBind (IVar fc cname) (map bindName constraints))
-                              (map (const (Implicit fc True)) meths)
+         let conapp = apply (impsBind (IVar fc cname) constraints)
+                            (map (const (Implicit fc True)) meths)
 
          let fnclause = PatClause fc (IApp fc (IVar fc hintname) conapp)
-                                  (IVar fc (constName cn))
+                                     (IVar fc cn)
          let fndef = IDef fc hintname [fnclause]
          pure (hintname, [tydecl, fndef])
   where
-    bindName : Name -> String
-    bindName (UN n) = "__bind_" ++ displayUserName n
-    bindName (NS _ n) = bindName n
-    bindName n = show n
 
-    constName : Name -> Name
-    constName n = UN (Basic $ bindName n)
-
-    impsBind : RawImp -> List String -> RawImp
+    impsBind : RawImp -> List Name -> RawImp
     impsBind fn [] = fn
     impsBind fn (n :: ns)
         = impsBind (IAutoApp fc fn (IBindVar fc n)) ns
@@ -297,7 +262,7 @@ mkCon loc n
 updateIfaceSyn : {auto c : Ref Ctxt Defs} ->
                  {auto s : Ref Syn SyntaxInfo} ->
                  Name -> Name -> List Name -> List Name -> List RawImp ->
-                 List Declaration -> List (Name, List ImpClause) ->
+                 List Signature -> List (Name, List ImpClause) ->
                  Core ()
 updateIfaceSyn iname cn impps ps cs ms ds
     = do ms' <- traverse totMeth ms
@@ -305,14 +270,10 @@ updateIfaceSyn iname cn impps ps cs ms ds
          update Syn { ifaces     $= addName iname info,
                       saveIFaces $= (iname :: ) }
  where
-    totMeth : Declaration -> Core Method
+    totMeth : Signature -> Core Method
     totMeth decl
         = do let treq = findTotality decl.flags
-             pure $ MkMethod { name = decl.name
-                             , count = decl.count
-                             , totalReq = treq
-                             , type = decl.type
-                             }
+             pure $ Mk [decl.name, decl.count, treq] decl.type
 
 -- Read the implicitly added parameters from an interface type, so that we
 -- know to substitute an implicit in when defining the implementation
@@ -334,19 +295,19 @@ elabInterface : {vars : _} ->
                 Name ->
                 (params : List (Name, (RigCount, RawImp))) ->
                 (dets : Maybe (List1 Name)) ->
-                (conName : Maybe (String, Name)) ->
+                (conName : Maybe (WithDoc $ AddFC Name)) ->
                 List ImpDecl ->
                 Core ()
 elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon body
     = do fullIName <- getFullName iname
          ns_iname <- inCurrentNS fullIName
-         let conName_in = maybe (mkCon vfc fullIName) snd mcon
+         let conName_in = maybe (mkCon vfc fullIName) val mcon
          -- Machine generated names need to be qualified when looking them up
          conName <- inCurrentNS conName_in
-         whenJust (fst <$> mcon) (addDocString conName)
+         whenJust (get "doc" <$> mcon) (addDocString conName)
          let meth_sigs = mapMaybe getSig body
-         let meth_decls = map sigToDecl meth_sigs
-         let meth_names = map name meth_decls
+         let meth_decls = meth_sigs
+         let meth_names = map (val . name) meth_decls
          let defaults = mapMaybe getDefault body
 
          elabAsData conName meth_names meth_sigs
@@ -354,7 +315,7 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
          elabMethods conName meth_names meth_sigs
          ds <- traverse (elabDefault meth_decls) defaults
 
-         ns_meths <- traverse (\mt => do n <- inCurrentNS mt.name
+         ns_meths <- traverse (\mt => do n <- traverse inCurrentNS mt.name
                                          pure ({ name := n } mt)) meth_decls
          defs <- get Ctxt
          Just ty <- lookupTyExact ns_iname (gamma defs)
@@ -371,10 +332,10 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
     paramNames : List Name
     paramNames = map fst params
 
-    nameCons : Int -> List (Maybe Name, RawImp) -> List (Name, RawImp)
-    nameCons i [] = []
-    nameCons i ((_, ty) :: rest)
-        = (UN (Basic $ "__con" ++ show i), ty) :: nameCons (i + 1) rest
+    nameCons : List (Maybe Name, RawImp) -> Core (List (Name, RawImp))
+    nameCons [] = pure []
+    nameCons ((_, ty) :: rest)
+        = pure $ (!(genVarName "__con"), ty) :: !(nameCons rest)
 
     -- Elaborate the data declaration part of the interface
     elabAsData : (conName : Name) -> List Name ->
@@ -397,28 +358,29 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
              log "elab.interface" 5 $ "Making interface data type " ++ show dt
              ignore $ processDecls nest env [dt]
 
-    elabMethods : (conName : Name) -> List Name ->
-                  List Signature ->
-                  Core ()
-    elabMethods conName meth_names meth_sigs
-        = do -- Methods have same visibility as data declaration
+    elabMethods : (conName : Name) -> List Name -> List Signature -> Core ()
+    elabMethods conName methNames methSigs
+        = do bindNames <- for methNames $ genVarName . nameRoot
+             -- Methods have same visibility as data declaration
              fnsm <- traverse (getMethToplevel env (collapseDefault def_vis)
                                                iname conName
                                                (map fst constraints)
-                                               meth_names
-                                               params) meth_sigs
+                                               methNames
+                                               bindNames
+                                               params)
+                              (zip bindNames methSigs)
              let fns = concat fnsm
              log "elab.interface" 5 $ "Top level methods: " ++ show fns
              traverse_ (processDecl [] nest env) fns
              traverse_ (\n => do mn <- inCurrentNS n
                                  setFlag vfc mn Inline
                                  setFlag vfc mn TCInline
-                                 setFlag vfc mn Overloadable) meth_names
+                                 setFlag vfc mn Overloadable) methNames
 
     -- Check that a default definition is correct. We just discard it here once
     -- we know it's okay, since we'll need to re-elaborate it for each
     -- instance, to specialise it
-    elabDefault : List Declaration ->
+    elabDefault : List Signature ->
                   (FC, List FnOpt, Name, List ImpClause) ->
                   Core (Name, List ImpClause)
     elabDefault tydecls (dfc, opts, n, cs)
@@ -428,7 +390,7 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
              dn <- inCurrentNS dn_in
 
              (rig, dty) <-
-                       case findBy (\ d => d <$ guard (n == d.name)) tydecls of
+                       case findBy (\ d => d <$ guard (n == d.name.val)) tydecls of
                           Just d => pure (d.count, d.type)
                           Nothing => throw (GenericMsg dfc ("No method named " ++ show n ++ " in interface " ++ show iname))
 
@@ -437,7 +399,7 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
              -- Substitute the method names with their top level function
              -- name, so they don't get implicitly bound in the name
              methNameMap <- traverse (\d =>
-                                do let n = d.name
+                                do let n = d.name.val
                                    cn <- inCurrentNS n
                                    pure (n, applyParams (IVar vdfc cn) paramNames))
                                tydecls
@@ -445,12 +407,12 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
                      $ bindIFace vdfc ity -- bind interface (?!)
                      $ substNames (toList vars) methNameMap dty
 
-             dty_imp <- bindTypeNames dfc [] (map name tydecls ++ toList vars) dty
+             dty_imp <- bindTypeNames dfc [] (map (val . name) tydecls ++ toList vars) dty
              log "elab.interface.default" 5 $ "Default method " ++ show dn ++ " : " ++ show dty_imp
 
              let dtydecl = IClaim $ MkFCVal vdfc
                                   $ MkIClaimData rig (collapseDefault def_vis) []
-                                  $ MkImpTy EmptyFC (NoFC dn) dty_imp
+                                  $ Mk [EmptyFC, NoFC dn] dty_imp
 
              processDecl [] nest env dtydecl
 
@@ -475,8 +437,8 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
 
         applyParams : RawImp -> List Name -> RawImp
         applyParams tm [] = tm
-        applyParams tm (UN (Basic n) :: ns)
-            = applyParams (INamedApp vdfc tm (UN (Basic n)) (IBindVar vdfc n)) ns
+        applyParams tm (n@(UN (Basic _)) :: ns)
+            = applyParams (INamedApp vdfc tm n (IBindVar vdfc n)) ns
         applyParams tm (_ :: ns) = applyParams tm ns
 
         changeNameTerm : Name -> RawImp -> Core RawImp
@@ -513,7 +475,7 @@ elabInterface {vars} ifc def_vis env nest constraints iname params dets mcon bod
     elabConstraintHints : (conName : Name) -> List Name ->
                           Core ()
     elabConstraintHints conName meth_names
-        = do let nconstraints = nameCons 0 constraints
+        = do nconstraints <- nameCons constraints
              chints <- traverse (getConstraintHint vfc env (collapseDefault def_vis)
                                                  iname conName
                                                  (map fst nconstraints)

@@ -64,7 +64,7 @@ localHelper {vars} nest env nestdecls_in func
          -- ensuring the nested definition is used exactly once
          let env' = eraseLinear env
          -- We don't want to keep rechecking delayed elaborators in the
-         -- locals  block, because they're not going to make progress until
+         -- locals block, because they're not going to make progress until
          -- we come out again, so save them
          ust <- get UST
          let olddelayed = delayedElab ust
@@ -99,8 +99,8 @@ localHelper {vars} nest env nestdecls_in func
     -- When we encounter the names in elaboration, we'll update to an
     -- application of the nested name.
     updateTyName : NestedNames vars -> ImpTy -> ImpTy
-    updateTyName nest (MkImpTy loc' n ty)
-        = MkImpTy loc' (mapData (mapNestedName nest) n) ty
+    updateTyName nest ty
+        = update "tyname" (map (mapNestedName nest)) ty
 
     updateDataName : NestedNames vars -> ImpData -> ImpData
     updateDataName nest (MkImpData loc' n tycons dopts dcons)
@@ -110,16 +110,15 @@ localHelper {vars} nest env nestdecls_in func
         = MkImpLater loc' (mapNestedName nest n) tycons
 
     updateFieldName : NestedNames vars -> IField -> IField
-    updateFieldName nest (MkIField fc rigc piinfo n rawimp)
-        = MkIField fc rigc piinfo (mapNestedName nest n) rawimp
+    updateFieldName nest field
+        = update "name" (map (mapNestedName nest)) field
 
-    updateRecordName : NestedNames vars -> ImpRecord -> ImpRecord
-    updateRecordName nest (MkImpRecord fc n params opts conName fields)
-        = MkImpRecord fc (mapNestedName nest n)
-                         params
-                         opts
-                         (mapNestedName nest conName)
-                         (map (updateFieldName nest) fields)
+    updateRecordName : NestedNames vars -> ImpRecordData Name -> ImpRecordData Name
+    updateRecordName nest (MkImpRecord header body)
+        = let updatedTyName = (update "name" (map (mapNestedName nest)) header)
+              updatedConName = (update "name" (map (mapNestedName nest)) body)
+              updatedParameters = (map (map (updateFieldName nest)) updatedConName)
+          in MkImpRecord updatedTyName updatedParameters
 
     updateRecordNS : NestedNames vars -> Maybe String -> Maybe String
     updateRecordNS _    Nothing   = Nothing
@@ -127,18 +126,18 @@ localHelper {vars} nest env nestdecls_in func
 
     updateName : NestedNames vars -> ImpDecl -> ImpDecl
     updateName nest (IClaim claim)
-         = IClaim $ mapData {type $= updateTyName nest} claim
+         = IClaim $ map {type $= updateTyName nest} claim
     updateName nest (IDef loc' n cs)
          = IDef loc' (mapNestedName nest n) cs
     updateName nest (IData loc' vis mbt d)
          = IData loc' vis mbt (updateDataName nest d)
     updateName nest (IRecord loc' ns vis mbt imprecord)
-         = IRecord loc' (updateRecordNS nest ns) vis mbt (updateRecordName nest imprecord)
+         = IRecord loc' (updateRecordNS nest ns) vis mbt (map (updateRecordName nest) imprecord)
     updateName nest i = i
 
     setPublic : ImpDecl -> ImpDecl
     setPublic (IClaim claim)
-        = IClaim $ mapData {vis := Public} claim
+        = IClaim $ map {vis := Public} claim
     setPublic (IData fc _ mbt d) = IData fc (specified Public) mbt d
     setPublic (IRecord fc c _ mbt r) = IRecord fc c (specified Public) mbt r
     setPublic (IParameters fc ps decls)
@@ -149,7 +148,7 @@ localHelper {vars} nest env nestdecls_in func
 
     setErased : ImpDecl -> ImpDecl
     setErased (IClaim claim)
-        = IClaim $ mapData {rig := erased} claim
+        = IClaim $ map {rig := erased} claim
     setErased (IParameters fc ps decls)
         = IParameters fc ps (map setErased decls)
     setErased (INamespace fc ps decls)
@@ -202,7 +201,7 @@ checkCaseLocal {vars} rig elabinfo nest env fc uname iname args sc expty
     = do defs <- get Ctxt
          Just def <- lookupCtxtExact iname (gamma defs)
               | Nothing => check rig elabinfo nest env sc expty
-         let nt = fromMaybe Func (defNameType $ definition def)
+         let nt = getDefNameType def
          let name = Ref fc nt iname
          (app, args) <- getLocalTerm fc env name args
          log "elab.local" 5 $ "Updating case local " ++ show uname ++ " " ++ show args

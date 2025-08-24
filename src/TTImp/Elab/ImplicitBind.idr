@@ -23,6 +23,7 @@ import TTImp.TTImp
 
 import Data.List
 import Libraries.Data.NameMap
+import Libraries.Data.SnocList.SizeOf
 
 %default covering
 
@@ -83,15 +84,16 @@ mkPatternHole {vars'} loc rig n topenv imode (Just expty_in)
               Nothing => mkPatternHole loc rig n topenv imode Nothing
               Just exp' =>
                   do tm <- implBindVar loc rig env n exp'
-                     pure (apply loc (thin tm sub) (mkArgs sub),
+                     pure (apply loc (thin tm sub) (mkArgs [<] sub),
                            expected,
                            thin exp' sub)
   where
-    -- TODO: generalise and get rid of (map weaken)
-    mkArgs : {vs : _} -> Thin newvars vs -> List (Term vs)
-    mkArgs Refl = []
-    mkArgs (Drop p) = Local loc Nothing 0 First :: map weaken (mkArgs p)
-    mkArgs _ = []
+    mkArgs : {0 vs : _} -> SizeOf seen -> Thin newvars vs -> List (Term (seen <>> vs))
+    mkArgs p Refl = []
+    mkArgs p (Drop th) =
+      let MkVar v := mkVarChiply p in
+      Local loc Nothing _ v :: mkArgs (p :< _) th
+    mkArgs p _ = []
 
     -- This is for the specific situation where we're pattern matching on
     -- function types, which is realistically the only time we'll legitimately
@@ -158,7 +160,7 @@ bindUnsolved {vars} fc elabmode _
                      (Env Term vars', PiInfo (Term vars'), Term vars', Term vars', Thin outer vars'))) ->
                  Core ()
     mkImplicit defs outerEnv subEnv (n, loc, rig, (vs ** (env, p, tm, exp, sub)))
-        = do Just (Hole _ _) <- lookupDefExact n (gamma defs)
+        = do Just (Hole {}) <- lookupDefExact n (gamma defs)
                   | _ => pure ()
              bindtm <- makeBoundVar n loc rig p outerEnv
                                     sub subEnv
@@ -178,14 +180,14 @@ swapIsVarH (Later p) = swapP p -- it'd be nice to do this all at the top
   where
     swapP : forall name . {idx : _} -> (0 p : IsVar name idx (y :: xs)) ->
             Var (y :: x :: xs)
-    swapP First = MkVar First
+    swapP First = first
     swapP (Later x) = MkVar (Later (Later x))
 
 swapIsVar : (vs : Scope) ->
             {idx : Nat} -> (0 p : IsVar nm idx (vs ++ x :: y :: xs)) ->
             Var (vs ++ y :: x :: xs)
 swapIsVar [] prf = swapIsVarH prf
-swapIsVar (x :: xs) First = MkVar First
+swapIsVar (x :: xs) First = first
 swapIsVar (x :: xs) (Later p)
     = let MkVar p' = swapIsVar xs p in MkVar (Later p')
 
@@ -233,7 +235,7 @@ liftImps (PI _) (tm, TType fc u) = (liftImps' tm, TType fc u)
                 Term vars -> Term vars
     liftImps' (Bind fc (PV n i) b@(Pi _ _ Implicit _) sc)
         = Bind fc (PV n i) b (liftImps' sc)
-    liftImps' (Bind fc n b@(Pi _ _ _ _) sc)
+    liftImps' (Bind fc n b@(Pi {}) sc)
         = push fc n b (liftImps' sc)
     liftImps' tm = tm
 liftImps _ x = x
@@ -304,7 +306,7 @@ implicitBind : {auto c : Ref Ctxt Defs} ->
                Name -> Core ()
 implicitBind n
     = do defs <- get Ctxt
-         Just (Hole _ _) <- lookupDefExact n (gamma defs)
+         Just (Hole {}) <- lookupDefExact n (gamma defs)
              | _ => pure ()
          updateDef n (const (Just ImpBind))
          removeHoleName n
@@ -423,20 +425,20 @@ checkBindVar : {vars : _} ->
                {auto o : Ref ROpts REPLOpts} ->
                RigCount -> ElabInfo ->
                NestedNames vars -> Env Term vars ->
-               FC -> UserName -> -- username is base of the pattern name
+               FC -> Name ->
                Maybe (Glued vars) ->
                Core (Term vars, Glued vars)
-checkBindVar rig elabinfo nest env fc str topexp
+checkBindVar rig elabinfo nest env fc nm topexp
     = do let elabmode = elabMode elabinfo
          -- In types, don't rebind if the name is already in scope;
          -- Below, return True if we don't need to implicitly bind the name
          let False = case implicitMode elabinfo of
-                          PI _ => maybe False (const True) (defined (UN str) env)
+                          PI _ => maybe False (const True) (defined nm env)
                           _ => False
-               | _ => check rig elabinfo nest env (IVar fc (UN str)) topexp
+               | _ => check rig elabinfo nest env (IVar fc nm) topexp
          est <- get EST
-         let n = PV (UN str) (defining est)
-         noteLHSPatVar elabmode (UN str)
+         let n = PV nm (defining est)
+         noteLHSPatVar elabmode nm
          notePatVar n
          est <- get EST
 
@@ -459,20 +461,20 @@ checkBindVar rig elabinfo nest env fc str topexp
                                 toBind $= ((n, NameBinding fc rig Explicit tm bty) :: ) }
 
                    log "metadata.names" 7 $ "checkBindVar is adding ↓"
-                   addNameType fc (UN str) env exp
-                   addNameLoc fc (UN str)
+                   addNameType fc nm env exp
+                   addNameLoc fc nm
 
                    checkExp rig elabinfo env fc tm (gnf env exp) topexp
               Just bty =>
                 do -- Check rig is consistent with the one in bty, and
                    -- update if necessary
-                   combine (UN str) rig (bindingRig bty)
+                   combine nm rig (bindingRig bty)
                    let tm = bindingTerm bty
                    let ty = bindingType bty
 
                    log "metadata.names" 7 $ "checkBindVar is adding ↓"
-                   addNameType fc (UN str) env ty
-                   addNameLoc fc (UN str)
+                   addNameType fc nm env ty
+                   addNameLoc fc nm
 
                    checkExp rig elabinfo env fc tm (gnf env ty) topexp
   where
@@ -505,7 +507,7 @@ checkPolyConstraint (MkPolyConstraint fc env arg x y)
          -- argument
          xnf <- continueNF defs env x
          case xnf of
-              NApp _ (NMeta _ _ _) _ =>
+              NApp _ (NMeta {}) _ =>
                    do ynf <- continueNF defs env y
                       if !(concrete defs env ynf)
                          then do empty <- clearDefs defs
@@ -522,7 +524,7 @@ solvePolyConstraint (MkPolyConstraint fc env arg x y)
          -- If the LHS of the constraint isn't a metavariable, we can solve
          -- the constraint
          case !(continueNF defs env x) of
-              xnf@(NApp _ (NMeta _ _ _) _) => pure ()
+              xnf@(NApp _ (NMeta {}) _) => pure ()
               t => do res <- unify inLHS fc env t !(continueNF defs env y)
                       -- If there's any constraints, it just means we didn't
                       -- solve anything and it won't help the check
