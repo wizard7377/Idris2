@@ -595,9 +595,9 @@ Function application syntax additions
 
 From now on you can utilise the new syntax of function applications:
 
-.. code-block:: idris
+.. code-block:: peg
 
-    f {x1 [= e1], x2 [= e2], ...}
+    f "{" (x0 ["=" e0]) ("," xn ["=" en])* "}"
 
 There are three additions here:
 
@@ -657,15 +657,14 @@ Thus if you want to use the new syntax, it is worth naming your ``Pi`` types.
 
 3. Multiple explicit arguments can be "skipped" more easily with the following syntax:
 
-.. code-block:: idris
+.. code-block:: peg
 
-    f {x1 [= e1], x2 [= e2], ..., xn [= en], _}
-
+    f "{" (x0 ["=" e0]) ("," xn ["=" en])* "," "_" "}"
 or
 
-.. code-block:: idris
+.. code-block:: peg
 
-    f {}
+    f "{}"
 
 in case none of the named arguments are wanted.
 
