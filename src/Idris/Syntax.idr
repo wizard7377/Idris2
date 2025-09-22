@@ -75,7 +75,10 @@ data HidingDirective = HideName Name
 -------------------------------------------------------------------------------
 
 mutual
-
+  public export 
+  data PMultiplicity : Type where 
+    PExplicitMult : RigCount -> PMultiplicity
+    PImplicitMult : PMultiplicity
   ||| Source language as produced by the parser
   public export
   PTerm : Type
@@ -99,11 +102,11 @@ mutual
        NewPi : WithFC (PBinderScope' nm) -> PTerm' nm
        Forall : WithFC (List1 (WithFC Name), PTerm' nm) -> PTerm' nm
 
-       PPi : FC -> RigCount -> PiInfo (PTerm' nm) -> Maybe Name ->
+       PPi : FC -> PMultiplicity -> PiInfo (PTerm' nm) -> Maybe Name ->
              (argTy : PTerm' nm) -> (retTy : PTerm' nm) -> PTerm' nm
-       PLam : FC -> RigCount -> PiInfo (PTerm' nm) -> (pat : PTerm' nm) ->
+       PLam : FC -> PMultiplicity -> PiInfo (PTerm' nm) -> (pat : PTerm' nm) ->
               (argTy : PTerm' nm) -> (scope : PTerm' nm) -> PTerm' nm
-       PLet : FC -> RigCount -> (pat : PTerm' nm) ->
+       PLet : FC -> PMultiplicity -> (pat : PTerm' nm) ->
               (nTy : PTerm' nm) -> (nVal : PTerm' nm) -> (scope : PTerm' nm) ->
               (alts : List (PClause' nm)) -> PTerm' nm
        PCase : FC -> List (PFnOpt' nm) -> PTerm' nm -> List (PClause' nm) -> PTerm' nm
@@ -246,9 +249,9 @@ mutual
   public export
   data PDo' : Type -> Type where
        DoExp : FC -> PTerm' nm -> PDo' nm
-       DoBind : FC -> (nameFC : FC) -> Name -> RigCount -> Maybe (PTerm' nm) -> PTerm' nm -> PDo' nm
+       DoBind : FC -> (nameFC : FC) -> Name -> PMultiplicity -> Maybe (PTerm' nm) -> PTerm' nm -> PDo' nm
        DoBindPat : FC -> PTerm' nm -> Maybe (PTerm' nm) -> PTerm' nm -> List (PClause' nm) -> PDo' nm
-       DoLet : FC -> (lhs : FC) -> Name -> RigCount -> PTerm' nm -> PTerm' nm -> PDo' nm
+       DoLet : FC -> (lhs : FC) -> Name -> PMultiplicity -> PTerm' nm -> PTerm' nm -> PDo' nm
        DoLetPat : FC -> PTerm' nm -> PTerm' nm -> PTerm' nm -> List (PClause' nm) -> PDo' nm
        DoLetLocal : FC -> List (PDecl' nm) -> PDo' nm
        DoRewrite : FC -> PTerm' nm -> PDo' nm
@@ -291,7 +294,7 @@ mutual
   public export
   record BasicMultiBinder' (nm : Type) where
     constructor MkBasicMultiBinder
-    rig : RigCount
+    rig : PMultiplicity
     names : List1 (WithFC Name)
     type : PTerm' nm
 
@@ -321,7 +324,7 @@ mutual
     scope : PTerm' nm
 
   public export
-  MkFullBinder : PiInfo (PTerm' nm) -> RigCount -> WithFC Name -> PTerm' nm -> PBinder' nm
+  MkFullBinder : PiInfo (PTerm' nm) -> PMultiplicity -> WithFC Name -> PTerm' nm -> PBinder' nm
   MkFullBinder info rig x y = MkPBinder info (MkBasicMultiBinder rig (singleton x) y)
 
   export
@@ -409,9 +412,9 @@ mutual
   public export
   record PWithProblem' (nm : Type) where
     constructor MkPWithProblem
-    withRigCount : RigCount
+    withRigCount : PMultiplicity
     withRigValue : PTerm' nm
-    withRigProof : Maybe (RigCount, Name) -- This ought to be a `Basic` username
+    withRigProof : Maybe (PMultiplicity, Name) -- This ought to be a `Basic` username
 
   public export
   PClause : Type
@@ -790,6 +793,10 @@ record Module where
   documentation : String
   decls : List PDecl
 
+public export 
+Show PMultiplicity where
+  show (PExplicitMult n) = show n
+  show PImplicitMult = ""
 parameters {0 nm : Type} (toName : nm -> Name)
 
   showAlt : PClause' nm -> String
@@ -810,8 +817,8 @@ parameters {0 nm : Type} (toName : nm -> Name)
   showAlt (MkImpossible _ lhs) = " | " ++ showPTerm lhs ++ " impossible;"
 
   showDo (DoExp _ tm) = showPTerm tm
-  showDo (DoBind _ _ n rig (Just ty) tm) = showCount rig ++ show n ++ " : " ++ showPTerm ty ++ " <- " ++ showPTerm tm
-  showDo (DoBind _ _ n rig _ tm) = showCount rig ++ show n ++ " <- " ++ showPTerm tm
+  showDo (DoBind _ _ n rig (Just ty) tm) = show rig ++ show n ++ " : " ++ showPTerm ty ++ " <- " ++ showPTerm tm
+  showDo (DoBind _ _ n rig _ tm) = show rig ++ show n ++ " <- " ++ showPTerm tm
   showDo (DoBindPat _ l (Just ty) tm alts)
       = showPTerm l ++ " : " ++ showPTerm ty ++ " <- " ++ showPTerm tm ++ concatMap showAlt alts
   showDo (DoBindPat _ l _ tm alts)
@@ -832,7 +839,7 @@ parameters {0 nm : Type} (toName : nm -> Name)
   showUpdate (PSetFieldApp p v) = showSep "." p ++ " $= " ++ showPTerm v
 
   showBasicMultiBinder (MkBasicMultiBinder rig names type)
-        = "\{showCount rig} \{showNames}: \{showPTerm type}"
+        = "\{show rig} \{showNames}: \{showPTerm type}"
         where
           showNames : String
           showNames = concat $ intersperse ", " $ map (show . val) (forget names)
@@ -850,30 +857,30 @@ parameters {0 nm : Type} (toName : nm -> Name)
   showPTermPrec d (PPi _ rig Explicit Nothing arg ret)
         = showPTermPrec d arg ++ " -> " ++ showPTermPrec d ret
   showPTermPrec d (PPi _ rig Explicit (Just n) arg ret)
-        = "(" ++ showCount rig ++ showPrec d n
+        = "(" ++ show rig ++ showPrec d n
          ++ " : " ++ showPTermPrec d arg ++ ") -> "
          ++ showPTermPrec d ret
   showPTermPrec d (PPi _ rig Implicit Nothing arg ret) -- shouldn't happen
-        = "{" ++ showCount rig ++ "_ : " ++ showPTermPrec d arg ++ "} -> "
+        = "{" ++ show rig ++ "_ : " ++ showPTermPrec d arg ++ "} -> "
           ++ showPTermPrec d ret
   showPTermPrec d (PPi _ rig Implicit (Just n) arg ret)
-        = "{" ++ showCount rig ++ showPrec d n ++ " : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
+        = "{" ++ show rig ++ showPrec d n ++ " : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
   showPTermPrec d (PPi _ top AutoImplicit Nothing arg ret)
         = showPTermPrec d arg ++ " => " ++ showPTermPrec d ret
   showPTermPrec d (PPi _ rig AutoImplicit (Just n) arg ret)
-        = "{auto " ++ showCount rig ++ showPrec d n ++ " : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
+        = "{auto " ++ show rig ++ showPrec d n ++ " : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
   showPTermPrec d (PPi _ rig (DefImplicit t) Nothing arg ret) -- shouldn't happen
-        = "{default " ++ showPTermPrec App t ++ " " ++ showCount rig ++ "_ : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
+        = "{default " ++ showPTermPrec App t ++ " " ++ show rig ++ "_ : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
   showPTermPrec d (PPi _ rig (DefImplicit t) (Just n) arg ret)
-        = "{default " ++ showPTermPrec App t ++ " " ++ showCount rig ++ showPrec d n ++ " : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
+        = "{default " ++ showPTermPrec App t ++ " " ++ show rig ++ showPrec d n ++ " : " ++ showPTermPrec d arg ++ "} -> " ++ showPTermPrec d ret
   showPTermPrec d (PLam _ rig _ n (PImplicit _) sc)
-        = "\\" ++ showCount rig ++ showPTermPrec d n ++ " => " ++ showPTermPrec d sc
+        = "\\" ++ show rig ++ showPTermPrec d n ++ " => " ++ showPTermPrec d sc
   showPTermPrec d (PLam _ rig _ n ty sc)
-        = "\\" ++ showCount rig ++ showPTermPrec d n ++ " : " ++ showPTermPrec d ty ++ " => " ++ showPTermPrec d sc
+        = "\\" ++ show rig ++ showPTermPrec d n ++ " : " ++ showPTermPrec d ty ++ " => " ++ showPTermPrec d sc
   showPTermPrec d (PLet _ rig n (PImplicit _) val sc alts)
-        = "let " ++ showCount rig ++ showPTermPrec d n ++ " = " ++ showPTermPrec d val ++ " in " ++ showPTermPrec d sc
+        = "let " ++ show rig ++ showPTermPrec d n ++ " = " ++ showPTermPrec d val ++ " in " ++ showPTermPrec d sc
   showPTermPrec d (PLet _ rig n ty val sc alts)
-        = "let " ++ showCount rig ++ showPTermPrec d n ++ " : " ++ showPTermPrec d ty ++ " = "
+        = "let " ++ show rig ++ showPTermPrec d n ++ " : " ++ showPTermPrec d ty ++ " = "
                  ++ showPTermPrec d val ++ concatMap showAlt alts ++
                  " in " ++ showPTermPrec d sc
   showPTermPrec _ (PCase _ _ tm cs)
@@ -1191,7 +1198,7 @@ Show PClause where
 export
 covering
 Show PClaimData where
-  show (MkPClaim rig _ _ sig) = showCount rig ++ show sig
+  show (MkPClaim rig _ _ sig) = show rig ++ show sig
 
 -- TODO: finish writing this instance
 export

@@ -462,7 +462,7 @@ mutual
            let fc = MkFC fname here here
            let var = PRef fc (MN "__leftTupleSection" 0)
            ts <- bounds (nonEmptyTuple fname s indents var)
-           pure (PLam fc top Explicit var (PInfer fc) ts.val)
+           pure (PLam fc PImplicitMult Explicit var (PInfer fc) ts.val)
 
   getInitRange : List (WithBounds PTerm) -> EmptyRule (PTerm, Maybe PTerm)
   getInitRange [x] = pure (x.val, Nothing)
@@ -540,7 +540,7 @@ mutual
       lams [] e = e
       lams ((fc, var) :: vars) e
         = let vfc = virtualiseFC fc in
-          PLam vfc top Explicit var (PInfer vfc) $ lams vars e
+          PLam vfc PImplicitMult Explicit var (PInfer vfc) $ lams vars e
 
       buildOutput : FC -> (List (FC, PTerm), PTerm) -> PTerm
       buildOutput fc (vars, scope) = lams vars $ PPair fc e scope
@@ -648,16 +648,18 @@ mutual
     <|> withWarning "DEPRECATED: trailing lambda. Use a $ or parens"
         (lam fname indents)
 
-  multiplicity : OriginDesc -> EmptyRule RigCount
+  multiplicity : OriginDesc -> EmptyRule PMultiplicity
   multiplicity fname
       = case !(optional $ decorate fname Keyword intLit) of
-          (Just 0) => pure erased
-          (Just 1) => pure linear
-          Nothing => pure top
+          (Just 0) => pure $ PExplicitMult erased
+          (Just 1) => pure $ PExplicitMult linear
+          Nothing => case !(optional (symbol "*")) of 
+            Just _ => pure $ PExplicitMult top
+            Nothing => pure PImplicitMult
           _ => fail "Invalid multiplicity (must be 0 or 1)"
 
   bindList : OriginDesc -> IndentInfo ->
-             Rule (List (RigCount, WithBounds PTerm, PTerm))
+             Rule (List (PMultiplicity, WithBounds PTerm, PTerm))
   bindList fname indents
       = forget <$> sepBy1 (decoratedSymbol fname ",")
                           (do rig <- multiplicity fname
@@ -791,10 +793,10 @@ mutual
                  alt = (MkImpossible fc lhs.val)
                  fcCase = boundToFC fname lhs
                  n = MN "lcase" 0 in
-             (PLam fcCase top Explicit (PRef fcCase n) (PInfer fcCase) $
+             (PLam fcCase PImplicitMult Explicit (PRef fcCase n) (PInfer fcCase) $
                  PCase (virtualiseFC fc) [] (PRef fcCase n) [alt]))
 
-       bindAll : List (RigCount, WithBounds PTerm, PTerm) -> PTerm -> PTerm
+       bindAll : List (PMultiplicity, WithBounds PTerm, PTerm) -> PTerm -> PTerm
        bindAll [] scope = scope
        bindAll ((rig, pat, ty) :: rest) scope
            = PLam (boundToFC fname pat) rig Explicit pat.val ty
@@ -815,7 +817,7 @@ mutual
             (let fc = boundToFC fname b
                  fcCase = virtualiseFC $ boundToFC fname endCase
                  n = MN "lcase" 0 in
-              PLam fcCase top Explicit (PRef fcCase n) (PInfer fcCase) $
+              PLam fcCase (PExplicitMult top) Explicit (PRef fcCase n) (PInfer fcCase) $
                 PCase (virtualiseFC fc) [] (PRef fcCase n) b.val)
 
   letBlock : OriginDesc -> IndentInfo -> Rule (WithBounds (Either LetBinder LetDecl))
@@ -1056,7 +1058,7 @@ mutual
       mkPi : FC -> PTerm -> Maybe (PiInfo PTerm, PTerm) -> PTerm
       mkPi _ arg Nothing = arg
       mkPi fc arg (Just (exp, a))
-        = PPi fc top exp Nothing arg a
+        = PPi fc (PExplicitMult top) exp Nothing arg a
 
   export
   expr : ParseOpts -> OriginDesc -> IndentInfo -> Rule PTerm
@@ -1316,15 +1318,15 @@ mkTyConType : OriginDesc -> FC -> List (WithBounds Name) -> PTerm
 mkTyConType fname fc [] = PType (virtualiseFC fc)
 mkTyConType fname fc (x :: xs)
    = let bfc = boundToFC fname x in
-     PPi bfc top Explicit Nothing (PType (virtualiseFC fc))
+     PPi bfc (PExplicitMult top) Explicit Nothing (PType (virtualiseFC fc))
      $ mkTyConType fname fc xs
 
 mkDataConType : PTerm -> List (WithFC ArgType) -> Maybe PTerm
 mkDataConType ret [] = Just ret
 mkDataConType ret (con@(MkWithData _ (UnnamedExpArg x)) :: xs)
-    = PPi con.fc top Explicit Nothing x <$> mkDataConType ret xs
+    = PPi con.fc PImplicitMult Explicit Nothing x <$> mkDataConType ret xs
 mkDataConType ret (con@(MkWithData _ (UnnamedAutoArg x)) :: xs)
-    = PPi con.fc top AutoImplicit Nothing x <$> mkDataConType ret xs
+    = PPi con.fc PImplicitMult AutoImplicit Nothing x <$> mkDataConType ret xs
 mkDataConType _ _ -- with and named applications not allowed in simple ADTs
     = Nothing
 
@@ -1833,7 +1835,7 @@ parameters {auto fname : OriginDesc} {auto indents : IndentInfo}
   recordParam
       = typedArg
     <|> do n <- fcBounds (decoratedSimpleBinderUName fname)
-           pure (MkFullBinder Explicit top n $ PInfer n.fc)
+           pure (MkFullBinder Explicit (PExplicitMult top) n $ PInfer n.fc)
 
   -- A record without a where is a forward declaration
   recordBody : String -> WithDefault Visibility Private ->
