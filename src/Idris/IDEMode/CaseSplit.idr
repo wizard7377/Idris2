@@ -7,8 +7,8 @@ import Core.Metadata
 import Core.TT
 import Core.Value
 
-import Parser.Lexer.Source
-import Parser.Unlit
+import Idris.Grammar.Lexer.Source
+import Idris.Grammar.Unlit
 
 import TTImp.Interactive.CaseSplit
 import TTImp.TTImp

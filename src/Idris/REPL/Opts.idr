@@ -2,7 +2,7 @@ module Idris.REPL.Opts
 
 import Compiler.Common
 import Idris.Syntax
-import Parser.Unlit
+import Idris.Grammar.Unlit
 import TTImp.TTImp
 
 import Data.List

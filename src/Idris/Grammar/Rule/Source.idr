@@ -1,7 +1,7 @@
-module Parser.Rule.Source
+module Idris.Grammar.Rule.Source
 
-import public Parser.Lexer.Source
-import public Parser.Support
+import public Idris.Grammar.Lexer.Source
+import public Idris.Grammar.Support
 
 import Core.Context
 import Core.TT

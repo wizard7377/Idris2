@@ -1,6 +1,6 @@
-module Parser.Rule.Package
+module Idris.Grammar.Rule.Package
 
-import public Parser.Lexer.Package
+import public Idris.Grammar.Lexer.Package
 
 import Data.List1
 

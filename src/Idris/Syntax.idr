@@ -25,7 +25,7 @@ import Libraries.Data.StringMap
 import Libraries.Data.WithDefault
 import Libraries.Text.PrettyPrint.Prettyprinter
 
-import Parser.Lexer.Source
+import Idris.Grammar.Lexer.Source
 
 %default covering
 
@@ -75,10 +75,6 @@ data HidingDirective = HideName Name
 -------------------------------------------------------------------------------
 
 mutual
-  public export 
-  data PMultiplicity : Type where 
-    PExplicitMult : RigCount -> PMultiplicity
-    PImplicitMult : PMultiplicity
   ||| Source language as produced by the parser
   public export
   PTerm : Type
@@ -102,11 +98,11 @@ mutual
        NewPi : WithFC (PBinderScope' nm) -> PTerm' nm
        Forall : WithFC (List1 (WithFC Name), PTerm' nm) -> PTerm' nm
 
-       PPi : FC -> PMultiplicity -> PiInfo (PTerm' nm) -> Maybe Name ->
+       PPi : FC -> RigCount -> PiInfo (PTerm' nm) -> Maybe Name ->
              (argTy : PTerm' nm) -> (retTy : PTerm' nm) -> PTerm' nm
-       PLam : FC -> PMultiplicity -> PiInfo (PTerm' nm) -> (pat : PTerm' nm) ->
+       PLam : FC -> RigCount -> PiInfo (PTerm' nm) -> (pat : PTerm' nm) ->
               (argTy : PTerm' nm) -> (scope : PTerm' nm) -> PTerm' nm
-       PLet : FC -> PMultiplicity -> (pat : PTerm' nm) ->
+       PLet : FC -> RigCount -> (pat : PTerm' nm) ->
               (nTy : PTerm' nm) -> (nVal : PTerm' nm) -> (scope : PTerm' nm) ->
               (alts : List (PClause' nm)) -> PTerm' nm
        PCase : FC -> List (PFnOpt' nm) -> PTerm' nm -> List (PClause' nm) -> PTerm' nm
@@ -249,9 +245,9 @@ mutual
   public export
   data PDo' : Type -> Type where
        DoExp : FC -> PTerm' nm -> PDo' nm
-       DoBind : FC -> (nameFC : FC) -> Name -> PMultiplicity -> Maybe (PTerm' nm) -> PTerm' nm -> PDo' nm
+       DoBind : FC -> (nameFC : FC) -> Name -> RigCount -> Maybe (PTerm' nm) -> PTerm' nm -> PDo' nm
        DoBindPat : FC -> PTerm' nm -> Maybe (PTerm' nm) -> PTerm' nm -> List (PClause' nm) -> PDo' nm
-       DoLet : FC -> (lhs : FC) -> Name -> PMultiplicity -> PTerm' nm -> PTerm' nm -> PDo' nm
+       DoLet : FC -> (lhs : FC) -> Name -> RigCount -> PTerm' nm -> PTerm' nm -> PDo' nm
        DoLetPat : FC -> PTerm' nm -> PTerm' nm -> PTerm' nm -> List (PClause' nm) -> PDo' nm
        DoLetLocal : FC -> List (PDecl' nm) -> PDo' nm
        DoRewrite : FC -> PTerm' nm -> PDo' nm
@@ -294,7 +290,7 @@ mutual
   public export
   record BasicMultiBinder' (nm : Type) where
     constructor MkBasicMultiBinder
-    rig : PMultiplicity
+    rig : RigCount
     names : List1 (WithFC Name)
     type : PTerm' nm
 
@@ -324,7 +320,7 @@ mutual
     scope : PTerm' nm
 
   public export
-  MkFullBinder : PiInfo (PTerm' nm) -> PMultiplicity -> WithFC Name -> PTerm' nm -> PBinder' nm
+  MkFullBinder : PiInfo (PTerm' nm) -> RigCount -> WithFC Name -> PTerm' nm -> PBinder' nm
   MkFullBinder info rig x y = MkPBinder info (MkBasicMultiBinder rig (singleton x) y)
 
   export
@@ -412,9 +408,9 @@ mutual
   public export
   record PWithProblem' (nm : Type) where
     constructor MkPWithProblem
-    withRigCount : PMultiplicity
+    withRigCount : RigCount
     withRigValue : PTerm' nm
-    withRigProof : Maybe (PMultiplicity, Name) -- This ought to be a `Basic` username
+    withRigProof : Maybe (RigCount, Name) -- This ought to be a `Basic` username
 
   public export
   PClause : Type
@@ -793,10 +789,7 @@ record Module where
   documentation : String
   decls : List PDecl
 
-public export 
-Show PMultiplicity where
-  show (PExplicitMult n) = show n
-  show PImplicitMult = ""
+
 parameters {0 nm : Type} (toName : nm -> Name)
 
   showAlt : PClause' nm -> String

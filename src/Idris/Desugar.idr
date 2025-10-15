@@ -27,8 +27,8 @@ import Idris.Elab.Interface
 
 import Idris.Desugar.Mutual
 
-import Parser.Lexer.Source
-import Parser.Support
+import Idris.Grammar.Lexer.Source
+import Idris.Grammar.Support
 
 import TTImp.BindImplicits
 import TTImp.Parser

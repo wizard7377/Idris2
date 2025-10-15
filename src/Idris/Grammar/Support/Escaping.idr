@@ -1,4 +1,4 @@
-module Parser.Support.Escaping
+module Idris.Grammar.Support.Escaping
 
 import Libraries.Data.String.Extra
 import Data.List

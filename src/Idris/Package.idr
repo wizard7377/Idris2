@@ -17,7 +17,7 @@ import Data.SnocList
 import Data.String
 import Data.These
 
-import Parser.Package
+import Idris.Grammar.Package
 import System
 import System.Directory
 import Libraries.System.Directory.Tree

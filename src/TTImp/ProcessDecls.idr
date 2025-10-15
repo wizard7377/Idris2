@@ -14,7 +14,7 @@ import Idris.Error
 import Idris.Pretty
 import Idris.REPL.Opts
 import Idris.Syntax
-import Parser.Source
+import Idris.Grammar.Source
 
 import TTImp.BindImplicits
 import TTImp.Elab.Check

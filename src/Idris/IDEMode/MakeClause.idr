@@ -1,8 +1,8 @@
 module Idris.IDEMode.MakeClause
 
 import Core.Name
-import Parser.Lexer.Source
-import Parser.Unlit
+import Idris.Grammar.Lexer.Source
+import Idris.Grammar.Unlit
 
 import Data.List
 import Data.Nat

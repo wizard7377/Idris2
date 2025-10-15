@@ -1,6 +1,6 @@
-module Parser.Lexer.Package
+module Idris.Grammar.Lexer.Package
 
-import public Parser.Lexer.Common
+import public Idris.Grammar.Lexer.Common
 import public Libraries.Text.Lexer
 import public Libraries.Text.Parser
 import public Libraries.Text.Bounded

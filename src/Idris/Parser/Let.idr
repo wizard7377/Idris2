@@ -18,7 +18,7 @@ import Data.List1
 public export
 record LetBinder where
   constructor MkLetBinder
-  letUsage     : PMultiplicity
+  letUsage     : RigCount
   letPattern   : PTerm
   letBoundType : PTerm
   letBoundTerm : PTerm
