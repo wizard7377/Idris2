@@ -650,11 +650,15 @@ mutual
 
   multiplicity : OriginDesc -> EmptyRule RigCount
   multiplicity fname
-      = case !(optional $ decorate fname Keyword intLit) of
-          (Just 0) => pure erased
-          (Just 1) => pure linear
-          Nothing => pure top
-          _ => fail "Invalid multiplicity (must be 0 or 1)"
+      = (bounds (symbol "*") $> top)
+        <|>
+          do 
+            r <- (optional $ decorate fname Keyword intLit)
+            case r of
+              (Just 0) => pure erased
+              (Just 1) => pure linear
+              Nothing => pure top
+              _ => fail "Invalid multiplicity (must be 0 or 1)"
 
   bindList : OriginDesc -> IndentInfo ->
              Rule (List (RigCount, WithBounds PTerm, PTerm))
